@@ -1,0 +1,88 @@
+- Bot in demo with EA
+- Custom Keywords for Single Keywords, Update Keywords, Addtional Keywords per Channel
+
+EA:
+
+Channel IDs (XXXXX,XXXXX) (Copy the checked channel ID from the copier. You can copy all the IDs at once or you can copy separately and paste them in the EA according to per channel to set the different strategies.)
+Symbols Mapping
+Symbol Prefix
+Symbol Suffix
+Skip Suffix/Prefix Pairs List
+Excluded Symbols
+Symbols to Trade
+
+
+
+=====> LOT MANAGEMENT
+Lot Calculation
+Split Lot/Risk Equally
+Fixed Lot Size for TP1
+Fixed Lot Size for TP2
+Fixed Lot Size for TP3
+Fixed Lot Size for TP4
+Fixed Lot Size for TP5
+Dynamic Lot Size Based on Risk % for TP1
+Dynamic Lot Size Based on Risk % for TP2
+Dynamic Lot Size Based on Risk % for TP3
+Dynamic Lot Size Based on Risk % for TP4
+Dynamic Lot Size Based on Risk % for TP5
+Special Lots (SYMBOL:LotsTP1-LotsTP2-LotsTP3-LotsTP4-LotsTP5,SYMBOL2: etc)
+
+
+
+=====> TRADE MANAGEMENT
+
+
+
+SL/TP Override Mode
+Predefined SL Pips for TP1
+Predefined SL Pips for TP2
+Predefined SL Pips for TP3
+Predefined SL Pips for TP4
+Predefined SL Pips for TP5
+Predefined TP Pips for TP1
+Predefined TP Pips for TP2
+Predefined TP Pips for TP3
+Predefined TP Pips for TP4
+Predefined TP Pips for TP5
+Max Retries if OrderSend Failed
+Remove Pending orders if not Actived After X Times (Minutes)
+
+
+
+=====> ADVANCED MANAGEMENT
+
+
+
+Force Market Execution
+Ignore Trades without SL-TP
+Enable/Disable Edit Message
+Check Already Opened Order with Same Price
+Multi Trades on Same Pair
+Same Pair Check Type
+Pips Tolerance for Market Execution
+Move SL to Entry Type
+Move SL After X Pips
+Breakeven Pips
+Partial Close % of Lots
+Half Close % of Lots
+Use Trailing Stop Pips
+Trailing start Pips
+Trailing step Pips
+Trailing distance from the current price Pips
+Use Trailing Stop TP
+
+
+
+=====> TIME MANAGEMENT
+Enable/Disable Time Filter
+Start Time
+End Time
+
+
+
+=====> ALERTS MANAGEMENT
+Send MT4 Notifications
+
+Custom Keywords.
+Signal Keyword, Update Keyword and Additional Keyword (picture attached for the custom keywords i can put in the bot)

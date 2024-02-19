@@ -39,7 +39,7 @@ class Ui_MainWindow(object):
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(1312, 634)
         MainWindow.setFixedWidth(1312)
-        MainWindow.setStyleSheet("background-color:Tan;")
+        MainWindow.setStyleSheet("background-color:Gray;")
         self.queue_in = queue_in
         self.queue_out = queue_out
         self.centralwidget = QtWidgets.QWidget(MainWindow)
@@ -168,10 +168,10 @@ class Ui_MainWindow(object):
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
         MainWindow.setWindowTitle(
-            _translate("MainWindow", "TELEGRAM SIGNAL DISPATCHER")
+            _translate("MainWindow", "SIGNAL COPIER")
         )
         self.signalLabel.setText(_translate("MainWindow", "LAST SIGNAL RECEIVED:"))
-        self.logoLabel.setText(_translate("MainWindow", "TELEGRAM SIGNAL DISPATCHER"))
+        self.logoLabel.setText(_translate("MainWindow", "SIGNAL COPIER"))
         self.terminalButton.setText(_translate("MainWindow", "Add Terminal"))
         self.config_label.setText(_translate("MainWindow", "CONFIGURE TERMINALS"))
         self.signalText.setText(_translate("MainWindow", "Message"))
@@ -260,7 +260,7 @@ def run_bot(queue_in, queue_out):
 
     def sendToMT4(data):
         for i in currentList:
-            terminal = os.path.join(i, "MQL4", "Files")
+            terminal = os.path.join(i, "MQL5", "Files")
             if os.path.exists(terminal) == True:
                 log(f'Sending {data} to {terminal}')
                 if os.path.exists(os.path.join(terminal, "lastsignal.txt")) == False:
@@ -269,14 +269,25 @@ def run_bot(queue_in, queue_out):
                     os.path.join(terminal, "lastsignal.txt"), "w", encoding="utf-8"
                 ) as f:
                     f.write(data)
-
+    
     @client.on(events.NewMessage())
     async def handler(event):
         try:
-            # log('New message received.')
+            #log('New message received.')
             sender = await event.get_sender()
-            name = utils.get_display_name(sender)
+
+            #str(type(sender)) != "<class 'telethon.tl.types.User'>"
+            
+            chat_entity = await client.get_entity(event.message.peer_id)
+  
+            if str(type(sender)) == "<class 'telethon.tl.types.User'>":
+                name = chat_entity.title if hasattr(chat_entity, 'title') else 'Unknown Group'
+            else:
+                name = utils.get_display_name(sender)
+            #print('Group name is ',group_name)
+            #print('Sender type ',str(type(sender)))
             msg = ""
+            
             if name not in allowed_chats:
                 return
 
@@ -302,9 +313,19 @@ def run_bot(queue_in, queue_out):
     @client.on(events.MessageEdited)
     async def handler(event):
         try:
-            # log('New message received.')
+            #log('New message received.')
             sender = await event.get_sender()
-            name = utils.get_display_name(sender)
+
+            #str(type(sender)) != "<class 'telethon.tl.types.User'>"
+            
+            chat_entity = await client.get_entity(event.message.peer_id)
+  
+            if str(type(sender)) == "<class 'telethon.tl.types.User'>":
+                name = chat_entity.title if hasattr(chat_entity, 'title') else 'Unknown Group'
+            else:
+                name = utils.get_display_name(sender)
+            #print('Group name is ',group_name)
+            #print('Sender type ',str(type(sender)))
             msg = ""
             if name not in allowed_chats:
                 return
@@ -371,8 +392,8 @@ def run_bot(queue_in, queue_out):
                     for dir in dirs:
                         path = os.path.join(root, dir)
                         #log('Path: ',path)
-                        if path.endswith("MQL4") and 'MQL4' not in root:
-                            path = path.replace('MQL4', '')
+                        if path.endswith("MQL5") and 'MQL5' not in root:
+                            path = path.replace('MQL5', '')
                             path = path.replace(starting_directory, '')
                             path = path.replace('\\', '')
                             MQL4_paths.append(path)
@@ -382,7 +403,7 @@ def run_bot(queue_in, queue_out):
                         ui.terminalEdit.addItem(p)
                     break
             except Exception as e:
-                log('Failed to get MQL4 paths. Error = ',e)
+                log('Failed to get MQL5 paths. Error = ',e)
         
     async def update_sources():
         global channel_list
