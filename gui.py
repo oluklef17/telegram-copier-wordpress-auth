@@ -199,6 +199,8 @@ class Ui_MainWindow(object):
         self.backend_login.clicked.connect(self.handle_backend_login)
         self.tg_code_request_2.clicked.connect(self.handle_tg_code_request)
         self.tg_login_2.clicked.connect(self.handle_tg_login)
+        self.chatButton.clicked.connect(self.add_chats)
+
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
     
     def handle_backend_login(self):
@@ -220,6 +222,17 @@ class Ui_MainWindow(object):
     
     def handle_tg_login(self):
         self.queue_in.put('login to tg')
+    
+    def add_chats(self):
+        current_chat = self.chatSelect.currentText()
+        already_added = list()
+        for i in range(self.chatList.count()):
+            already_added.append(self.chatList.item(i).text())
+
+        #print('Chats: ',already_added)
+
+        if current_chat not in already_added:
+            self.chatList.addItem(current_chat)
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
