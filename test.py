@@ -1,13 +1,22 @@
-from queue import Queue
+from telethon import TelegramClient, events, utils
+import os
+import asyncio
 
-my_queue = Queue()
+session = "user"
+api_id = int(os.environ.get("TG_API_ID"))
+api_hash = os.environ.get('TG_API_HASH')
 
-# Enqueue elements
-my_queue.put(1)
-my_queue.put(2)
-my_queue.put(3)
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
-# Dequeue elements
-while not my_queue.empty():
-    element = my_queue.get()
-    print(f"Dequeued: {element}")
+async def run():
+    client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
+    await client.connect()
+    await client.start()
+    if await client.is_user_authorized():
+        print('Logged in')
+    else:
+        print('Not logged in')
+
+loop.run_until_complete(run())
+

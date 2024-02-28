@@ -267,7 +267,7 @@ def get_env(name, message, cast=str):
 session = "user"  # os.environ.get('TG_SESSION', 'loger')
 api_id = 19533412
 api_hash = "244adfc8d6a54f85df6958ac3823e203"
-proxy = None  # https://github.com/Anorov/PySocks
+
 
 # Create and start the client so we can make requests (we don't here)
 

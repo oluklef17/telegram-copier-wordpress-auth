@@ -12,6 +12,18 @@ from threading import Thread
 import asyncio
 import os
 import re
+from telethon import TelegramClient, events, utils
+
+AppRunning = True
+
+gui_launched = False
+
+client = None
+phone = None
+phone_code_hash = None
+session = "user"
+api_id = int(os.environ.get("TG_API_ID"))
+api_hash = os.environ.get('TG_API_HASH')
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow, queue_in, queue_out):
@@ -186,6 +198,7 @@ class Ui_MainWindow(object):
         self.stackedWidget.setCurrentIndex(1)
         self.backend_login.clicked.connect(self.handle_backend_login)
         self.tg_code_request_2.clicked.connect(self.handle_tg_code_request)
+        self.tg_login_2.clicked.connect(self.handle_tg_login)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
     
     def handle_backend_login(self):
@@ -195,6 +208,7 @@ class Ui_MainWindow(object):
         print('Password is ',password)
         if username == 'Yemi' and password == 'admin':
             if os.path.exists('user.session'):
+                #self.queue_in.put('logged in')
                 self.stackedWidget.setCurrentIndex(0)
             else:
                 self.stackedWidget.setCurrentIndex(3)
@@ -203,6 +217,9 @@ class Ui_MainWindow(object):
     
     def handle_tg_code_request(self):
         self.queue_in.put('get tg code')
+    
+    def handle_tg_login(self):
+        self.queue_in.put('login to tg')
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
@@ -232,19 +249,28 @@ def run_bot(queue_in, queue_out):
     asyncio.set_event_loop(loop)
 
     async def set_start_page():
-        while True:
+        while AppRunning:
+            await asyncio.sleep(1)
             try:
+                global gui_launched
                 if not queue_in.empty() and queue_in.get() == 'ui launched':
                     ui.stackedWidget.setCurrentIndex(2)
+                    gui_launched = True
                     break
+                else:
+                    continue
             except Exception as e:
                 print('Failed to set start page: ', e)
                 break
     
-    async def handle_tg_login():
-        while True:
+    async def handle_tg_code_request():
+        while AppRunning:
+            await asyncio.sleep(1)
             try:
-                if not queue_in.empty() and queue_in.get() == 'get tg code':
+                global phone_code_hash
+                global client
+                global phone
+                if not queue_in.empty() and queue_in.get() == 'get tg code':   
                     phone = ui.tg_phone_2.text()
                     password = ui.tg_password_2.text()
                     pattern = r'\+\d+'
@@ -252,16 +278,83 @@ def run_bot(queue_in, queue_out):
                         print('Phone number is: ',phone)
                     else:
                         print('Invalid phone format. Must be +XXX...')
+                    
+                    client = TelegramClient('user', api_id=api_id, api_hash=api_hash)
+                    await client.connect()
 
-                    print('Password is ',password)
-                    break
+                    if not await client.get_me():
+                        result = await client.send_code_request(phone)
+                        phone_code_hash = result.phone_code_hash
+                        break
+                    else:
+                        continue
+                else:
+                    continue
             except Exception as e:
                 print('TG login failed. Error = ',e)
                 break
+    
+    async def handle_tg_login():
+        while AppRunning:
+            await asyncio.sleep(1)
+            try:
+                global phone_code_hash
+                global client
+                global phone
+                if not queue_in.empty() and queue_in.get() == 'login to tg':
+                    code = ui.tg_code_2.text()
+                    await client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
+
+                    if client.is_user_authorized:
+                        ui.stackedWidget.setCurrentIndex(0)
+                        break
+                    else:
+                        continue
+                else:
+                    continue
+            
+            except Exception as e:
+                print('Failed to login to telegram. Error = ',e)
+                break
+    
+    async def update_chats():
+        while AppRunning:
+            await asyncio.sleep(1)
+            try:
+                global session
+                global api_id
+                global api_hash
+                global gui_launched
+                if gui_launched and ui.stackedWidget.currentIndex() == 0:
+                    client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
+                    await client.connect()
+                    await client.start()
+                    if await client.is_user_authorized():
+                        async for dialog in client.iter_dialogs():
+                            if not dialog.is_user:
+                                ui.chatSelect.setPlaceholderText("------Select chats to scan for messages-----")
+                                ui.chatSelect.addItem(dialog.title)
+                        break
+
+                    else:
+                        print('Not logged in')
+                        continue
+                    
+                else:
+                    continue
+            except Exception as e:
+                print('Failed to load chats. Error = ',e)
+                break
+
 
     
-    loop.run_until_complete(set_start_page())
-    loop.run_until_complete(handle_tg_login())
+    loop.run_until_complete(asyncio.gather(set_start_page(),handle_tg_code_request(),handle_tg_login(),update_chats()))
+    
+
+def close_app():
+    global AppRunning
+    print('Closing app')
+    AppRunning = False
 
 queue_in = Queue()
 queue_out = Queue()
@@ -271,6 +364,7 @@ bot_thread.start()
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
+    app.aboutToQuit.connect(lambda: close_app())
     MainWindow = QtWidgets.QMainWindow()
     ui = Ui_MainWindow()
     ui.setupUi(MainWindow, queue_in, queue_out)
