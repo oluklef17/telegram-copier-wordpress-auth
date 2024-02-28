@@ -83,10 +83,13 @@ class Ui_MainWindow(object):
         self.chatButton.setGeometry(QtCore.QRect(1010, 250, 111, 23))
         self.chatButton.setStyleSheet("background-color: qlineargradient(spread:pad, x1:0, y1:0.505682, x2:1, y2:0.477, stop:0 rgba(20, 47, 78, 219), stop:1 rgba(85, 98, 112, 226));color:rgba(255, 255, 255, 210);border-radius:5px;")
         self.chatButton.setObjectName("chatButton")
-        self.checkBox = QtWidgets.QCheckBox(parent=self.page)
-        self.checkBox.setGeometry(QtCore.QRect(600, 500, 181, 41))
-        self.checkBox.setStyleSheet("")
-        self.checkBox.setObjectName("checkBox")
+        # self.checkBox = QtWidgets.QCheckBox(parent=self.page)
+        # self.checkBox.setGeometry(QtCore.QRect(600, 500, 181, 41))
+        # self.checkBox.setStyleSheet("")
+        # self.checkBox.setObjectName("checkBox")
+        self.server_logout = QtWidgets.QPushButton(parent=self.page)
+        self.server_logout.setGeometry(QtCore.QRect(600, 500, 100, 31))
+        self.server_logout.setStyleSheet("background-color: qlineargradient(spread:pad, x1:0, y1:0.505682, x2:1, y2:0.477, stop:0 rgba(20, 47, 78, 219), stop:1 rgba(85, 98, 112, 226));color:rgba(255, 255, 255, 210);border-radius:5px;")
         self.terminalEdit = QtWidgets.QLineEdit(parent=self.page)
         self.terminalEdit.setGeometry(QtCore.QRect(120, 200, 281, 41))
         self.terminalEdit.setStyleSheet("background-color:rgba(0, 0, 0, 0);\n"
@@ -204,6 +207,7 @@ class Ui_MainWindow(object):
         self.tg_code_request_2.clicked.connect(self.handle_tg_code_request)
         self.tg_login_2.clicked.connect(self.handle_tg_login)
         self.chatButton.clicked.connect(self.add_chats)
+        self.server_logout.clicked.connect(self.logout)
 
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
     
@@ -236,8 +240,9 @@ class Ui_MainWindow(object):
                 #print('Session info: ',session_info)
                 #QtWidgets.QMessageBox.information(self, 'Login Successful', "You are now logged in.")
                 self.openBotGUI(session_info)
+                self.queue_in.put('start')
                 if os.path.exists('user.session'):
-                    self.queue_in.put('logged in')
+                    #self.queue_in.put('logged in')       
                     self.stackedWidget.setCurrentIndex(0)
                 else:
                     self.stackedWidget.setCurrentIndex(3)
@@ -255,6 +260,24 @@ class Ui_MainWindow(object):
         #         self.stackedWidget.setCurrentIndex(3)
         # else:
         #     print('Username or password incorrect.')
+    
+    def logout(self, force=False):
+        if not force:
+            try:
+                response = requests.post("https://masterwithjosh.com/logout", json={"session_id": self.session_info['session_id']}, timeout=5)
+                if response.status_code != 200:
+                    self.show_popup('Logout Failed', 'An error occurred while trying to log out.', 2)
+                    #QtWidgets.QMessageBox.warning(self, 'Logout Failed', 'An error occurred while trying to log out.')
+                    return
+            except requests.exceptions.RequestException:
+                self.show_popup('Logout Failed', 'Could not connect to server.', 0)
+                #QtWidgets.QMessageBox.critical(self, 'Logout Failed', 'Could not connect to server.')
+                return
+        self.show_popup('Logout Successful', 'You have been logged out.', 1)
+        #QMessageBox.information(self, 'Logout Successful', 'You have been logged out.')
+        self.queue_in.put('stop')
+        self.stackedWidget.setCurrentIndex(2)
+        
     
     def openBotGUI(self, session_info):
         self.session_info = session_info
@@ -350,10 +373,11 @@ class Ui_MainWindow(object):
         self.config_label.setText(_translate("MainWindow", "CONFIGURE TERMINALS"))
         self.config_label_2.setText(_translate("MainWindow", "CONFIGURE CHATS"))
         self.signalText.setText(_translate("MainWindow", "Message"))
+        self.server_logout.setText(_translate("MainWindow", "LOGOUT"))
         self.terminalListLabel.setText(_translate("MainWindow", "Terminal list"))
         self.terminalButton.setText(_translate("MainWindow", "Add Terminal"))
         self.chatButton.setText(_translate("MainWindow", "Add Chat"))
-        self.checkBox.setText(_translate("MainWindow", "LOGOUT ON EXIT"))
+        #self.checkBox.setText(_translate("MainWindow", "LOGOUT ON EXIT"))
         self.terminalEdit.setPlaceholderText(_translate("MainWindow", "Paste MT4/MT5 terminal path here"))
         self.signalLabel.setText(_translate("MainWindow", "LAST SIGNAL RECEIVED:"))
         self.chatListLabel.setText(_translate("MainWindow", "Chat list"))
@@ -470,17 +494,23 @@ def run_bot(queue_in, queue_out):
                 continue
     
     async def check_termination():
+        global AppRunning
         while AppRunning:
             await asyncio.sleep(1)
-            # try:
-            #     if not queue_in.empty() and queue_in.get() == 'stop':
-            #         AppRunning = False
-            #     else:
-            #         continue
-            # except Exception as e:
-            #     print('Failed to terminate application. Error = ',e)
-            #     continue
-
+            try:
+                if not queue_in.empty() and queue_in.get() == 'stop':
+                    print('Stopping app.')
+                    AppRunning = False
+                elif not queue_in.empty() and queue_in.get() == 'start':
+                    print('Starting app')
+                    AppRunning = True
+                else:
+                    continue
+            except Exception as e:
+                print('Failed to terminate application. Error = ',e)
+                continue
+            
+                
 
 
     
