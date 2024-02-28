@@ -12,6 +12,8 @@ from threading import Thread
 import asyncio
 import os
 import re
+import requests
+from datetime import datetime
 from telethon import TelegramClient, events, utils
 
 AppRunning = True
@@ -32,6 +34,8 @@ class Ui_MainWindow(object):
         MainWindow.setStyleSheet("background-color:gray;")
         self.queue_in = queue_in
         self.queue_out = queue_out
+        self.token_expires_in = None
+        self.initSessionRefreshTimer()
         self.centralwidget = QtWidgets.QWidget(parent=MainWindow)
         self.centralwidget.setObjectName("centralwidget")
         self.stackedWidget = QtWidgets.QStackedWidget(parent=self.centralwidget)
@@ -203,19 +207,125 @@ class Ui_MainWindow(object):
 
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
     
+    def show_popup(self, title, text, mode=0):
+        msg = QtWidgets.QMessageBox()
+        msg.setWindowTitle(title)
+        msg.setText(text)
+
+        if mode == 0:
+            msg.setIcon(QtWidgets.QMessageBox.Icon.Critical)
+        elif mode == 1:
+            msg.setIcon(QtWidgets.QMessageBox.Icon.Information)
+        elif mode == 2:
+            msg.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+
+        x = msg.exec()
+    
     def handle_backend_login(self):
         username = self.backend_username.text()
         password = self.backend_password.text()
         print('Username is ',username)
         print('Password is ',password)
-        if username == 'Yemi' and password == 'admin':
-            if os.path.exists('user.session'):
-                #self.queue_in.put('logged in')
-                self.stackedWidget.setCurrentIndex(0)
+        try:
+            response = requests.post("https://masterwithjosh.com/login", json={"username": username, "password": password}, timeout=5)
+            if response.status_code == 200:
+                session_info = response.json()
+                self.show_popup('Login Successful', "You are now logged in.", 1)
+                self.authWarning.setText(f"Logged in with session ID: {session_info['session_id']}")
+                self.authWarning.setStyleSheet("font:bold;color:green")
+                #print('Session info: ',session_info)
+                #QtWidgets.QMessageBox.information(self, 'Login Successful', "You are now logged in.")
+                self.openBotGUI(session_info)
+                if os.path.exists('user.session'):
+                    self.queue_in.put('logged in')
+                    self.stackedWidget.setCurrentIndex(0)
+                else:
+                    self.stackedWidget.setCurrentIndex(3)
             else:
-                self.stackedWidget.setCurrentIndex(3)
-        else:
-            print('Username or password incorrect.')
+                self.show_popup('Login Failed', "Invalid credentials or server error.", 2)
+                #QtWidgets.QMessageBox.warning(self, 'Login Failed', 'Invalid credentials or server error.')
+        except requests.exceptions.RequestException as e:
+            self.show_popup('Login Failed', "Could not connect to server.", 0)
+            #QtWidgets.QMessageBox.critical(self, 'Login Failed', 'Could not connect to server.')
+        # if username == 'Yemi' and password == 'admin':
+        #     if os.path.exists('user.session'):
+        #         #self.queue_in.put('logged in')
+        #         self.stackedWidget.setCurrentIndex(0)
+        #     else:
+        #         self.stackedWidget.setCurrentIndex(3)
+        # else:
+        #     print('Username or password incorrect.')
+    
+    def openBotGUI(self, session_info):
+        self.session_info = session_info
+        self.initSessionRefreshTimer()
+    
+    def initSessionRefreshTimer(self):
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.refreshSessionIfNeeded)
+        self.timer.start(60000)  # Refresh every 60 seconds
+    
+    def logout(self, force=False):
+        if not force:
+            try:
+                response = requests.post("https://masterwithjosh.com/logout", json={"session_id": self.session_info['session_id']}, timeout=5)
+                if response.status_code != 200:
+                    self.show_popup('Logout Failed', "An error occurred while trying to log out.", 2)
+                    #QtWidgets.QMessageBox.warning(self, 'Logout Failed', 'An error occurred while trying to log out.')
+                    return
+            except requests.exceptions.RequestException:
+                self.show_popup('Logout Failed', "Could not connect to server.", 0)
+                #QtWidgets.QMessageBox.critical(self, 'Logout Failed', 'Could not connect to server.')
+                return
+        
+        self.show_popup('Logout Successful', "You have been logged out.", 0)
+        #QtWidgets.QMessageBox.information(self, 'Logout Successful', 'You have been logged out.')
+        self.queue_in.put('stop')
+        self.stackedWidget.setCurrentIndex(2)
+    
+    def validateSession(self):
+        try:
+            response = requests.post("https://masterwithjosh.com/session/validate", json={"session_id": self.session_info['session_id']}, timeout=5)
+            if response.status_code != 200:
+                self.show_popup('Session Ended', "Your session has ended. Please log in again.", 2)
+                #QtWidgets.QMessageBox.warning(self, 'Session Ended', 'Your session has ended. Please log in again.')
+                self.logout(force=True)
+        except requests.exceptions.RequestException as e:
+            self.show_popup('Session Validation Failed', "Could not validate session with server.", 2)
+            #QtWidgets.QMessageBox.critical(self, 'Session Validation Failed', 'Could not validate session with server.')
+    
+    def refreshToken(self):
+        # Replace with the actual URL of your refresh endpoint
+        refresh_url = 'https://masterwithjosh.com/token/refresh'
+        headers = {'Content-Type': 'application/json'}
+        data = {'token': self.session_info['token'], 'session_id': self.session_info['session_id']}
+
+        try:
+            response = requests.post(refresh_url, json=data, headers=headers)
+            if response.status_code == 200:
+                new_token_info = response.json()
+                self.access_token = new_token_info.get('access_token')
+                # Update the expiration time if provided by the server
+                self.token_expires_in = new_token_info.get('expires_in', self.token_expires_in)
+                self.show_popup('Session Refreshed', "Session has been successfully refreshed.", 1)
+                #QtWidgets.QMessageBox.information(self, 'Session Refreshed', 'Session has been successfully refreshed.')
+            else:
+                self.show_popup('Session Refresh Failed', "Failed to refresh your session. Please login again.", 2)
+                #QtWidgets.QMessageBox.warning(self, 'Session Refresh Failed', 'Failed to refresh your session. Please login again.')
+                # Handle session refresh failure, possibly by logging out or prompting re-login
+        except requests.exceptions.RequestException as e:
+            self.show_popup('Network Error', "Unable to connect to the server to refresh the session.", 0)
+            #QtWidgets.QMessageBox.critical(self, 'Network Error', 'Unable to connect to the server to refresh the session.')
+    
+    def refreshSessionIfNeeded(self):
+        # Assuming the server provides the expiry time as a UNIX timestamp
+        print('Attempting session validation')
+        self.validateSession()
+        if self.token_expires_in and datetime.now().timestamp() >= self.token_expires_in - 300:  # Refresh if within 5 minutes of expiry
+            print('Attempting token refresh.')
+            self.refreshToken()
+        if self.token_expires_in:
+            print('Token expires in ',self.token_expires_in)
     
     def handle_tg_code_request(self):
         self.queue_in.put('get tg code')
@@ -274,7 +384,7 @@ def run_bot(queue_in, queue_out):
                     continue
             except Exception as e:
                 print('Failed to set start page: ', e)
-                break
+                continue
     
     async def handle_tg_code_request():
         while AppRunning:
@@ -305,7 +415,7 @@ def run_bot(queue_in, queue_out):
                     continue
             except Exception as e:
                 print('TG login failed. Error = ',e)
-                break
+                continue
     
     async def handle_tg_login():
         while AppRunning:
@@ -328,7 +438,7 @@ def run_bot(queue_in, queue_out):
             
             except Exception as e:
                 print('Failed to login to telegram. Error = ',e)
-                break
+                continue
     
     async def update_chats():
         while AppRunning:
@@ -357,11 +467,24 @@ def run_bot(queue_in, queue_out):
                     continue
             except Exception as e:
                 print('Failed to load chats. Error = ',e)
-                break
+                continue
+    
+    async def check_termination():
+        while AppRunning:
+            await asyncio.sleep(1)
+            # try:
+            #     if not queue_in.empty() and queue_in.get() == 'stop':
+            #         AppRunning = False
+            #     else:
+            #         continue
+            # except Exception as e:
+            #     print('Failed to terminate application. Error = ',e)
+            #     continue
+
 
 
     
-    loop.run_until_complete(asyncio.gather(set_start_page(),handle_tg_code_request(),handle_tg_login(),update_chats()))
+    loop.run_until_complete(asyncio.gather(set_start_page(),handle_tg_code_request(),handle_tg_login(),update_chats(), check_termination()))
     
 
 def close_app():
