@@ -15,6 +15,8 @@ import re
 import requests
 from datetime import datetime
 from telethon import TelegramClient, events, utils
+from client import run_client
+import sqlite3
 
 AppRunning = True
 
@@ -240,6 +242,10 @@ class Ui_MainWindow(object):
                 #print('Session info: ',session_info)
                 #QtWidgets.QMessageBox.information(self, 'Login Successful', "You are now logged in.")
                 self.openBotGUI(session_info)
+
+                if not self.timer.isActive():
+                    self.timer.start(60000)
+
                 self.queue_in.put('start')
                 if os.path.exists('user.session'):
                     #self.queue_in.put('logged in')       
@@ -273,9 +279,10 @@ class Ui_MainWindow(object):
                 self.show_popup('Logout Failed', 'Could not connect to server.', 0)
                 #QtWidgets.QMessageBox.critical(self, 'Logout Failed', 'Could not connect to server.')
                 return
+        self.timer.stop()
+        self.queue_in.put('stop')
         self.show_popup('Logout Successful', 'You have been logged out.', 1)
         #QMessageBox.information(self, 'Logout Successful', 'You have been logged out.')
-        self.queue_in.put('stop')
         self.stackedWidget.setCurrentIndex(2)
         
     
@@ -301,7 +308,7 @@ class Ui_MainWindow(object):
                 #QtWidgets.QMessageBox.critical(self, 'Logout Failed', 'Could not connect to server.')
                 return
         
-        self.show_popup('Logout Successful', "You have been logged out.", 0)
+        self.show_popup('Logout Successful', "You have been logged out.", 1)
         #QtWidgets.QMessageBox.information(self, 'Logout Successful', 'You have been logged out.')
         self.queue_in.put('stop')
         self.stackedWidget.setCurrentIndex(2)
@@ -392,8 +399,12 @@ class Ui_MainWindow(object):
         self.tg_login_2.setText(_translate("MainWindow", "Connect to Telegram"))
 
 def run_bot(queue_in, queue_out):
+    global client
+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+
+    client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
 
     async def set_start_page():
         while AppRunning:
@@ -468,19 +479,32 @@ def run_bot(queue_in, queue_out):
         while AppRunning:
             await asyncio.sleep(1)
             try:
+                global client
                 global session
                 global api_id
                 global api_hash
                 global gui_launched
                 if gui_launched and ui.stackedWidget.currentIndex() == 0:
-                    client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
+                    database_locked = False
+
+                    try:
+                       async with client:
+                            pass
+                    except sqlite3.OperationalError as e:
+                        print('Database is locked. Will re-attempt chats update')
+                        database_locked = True
+                    
+                    if database_locked:
+                        continue
+
                     await client.connect()
-                    await client.start()
+                   
                     if await client.is_user_authorized():
                         async for dialog in client.iter_dialogs():
                             if not dialog.is_user:
                                 ui.chatSelect.setPlaceholderText("------Select chats to scan for messages-----")
                                 ui.chatSelect.addItem(dialog.title)
+                        #client.disconnect()
                         break
 
                     else:
@@ -495,11 +519,15 @@ def run_bot(queue_in, queue_out):
     
     async def check_termination():
         global AppRunning
+        global client
         while AppRunning:
             await asyncio.sleep(1)
             try:
                 if not queue_in.empty() and queue_in.get() == 'stop':
                     print('Stopping app.')
+                    if client:
+                        print('Disconnecting client.')
+                        await client.disconnect()
                     AppRunning = False
                 elif not queue_in.empty() and queue_in.get() == 'start':
                     print('Starting app')
@@ -508,18 +536,132 @@ def run_bot(queue_in, queue_out):
                     continue
             except Exception as e:
                 print('Failed to terminate application. Error = ',e)
-                continue
+    
+    @client.on(events.NewMessage())
+    async def handler(event):
+        try:
+            #log('New message received.')
+            sender = await event.get_sender()
+
+            #str(type(sender)) != "<class 'telethon.tl.types.User'>"
             
+            chat_entity = await client.get_entity(event.message.peer_id)
+
+            if str(type(sender)) == "<class 'telethon.tl.types.User'>":
+                name = chat_entity.title if hasattr(chat_entity, 'title') else 'Unknown Group'
+            else:
+                name = utils.get_display_name(sender)
+            #print('Group name is ',group_name)
+            #print('Sender type ',str(type(sender)))
+            msg = ""
+
+            allowed_chats = list()
+
+            for i in range(ui.chatList.count()):
+                allowed_chats.append(ui.chatList.item(i).text())
+
+            
+            if name not in allowed_chats:
+               return
+
+            if event.is_reply:
+                reply = await event.get_reply_message()
+                msg = reply.raw_text
+                msg = msg.replace("|", "")
+                msg = msg.replace("{", "")
+                msg = msg.replace("}", "")
+                msg = msg + "|" + event.raw_text + " {" + str(reply.id) + "}"
+            else:
+                msg = event.raw_text
+                msg = msg.replace("|", "")
+                msg = msg.replace("{", "")
+                msg = msg.replace("}", "")
+                msg = msg  + " {" + str(event.id) + "}"
+            print('Message: ',msg)
+            #sendToMT4(f'CH{allowed_chats.index(name) + 1}: {name}' + "\n" + msg)
+            MSG = msg.upper()
+            ui.signalText.setText(msg[: msg.find("{")] + "\n\nFROM: " + name)
+        except Exception as e:
+            print("Failed to process last message. Error = ", e)
+
+    
+    @client.on(events.MessageEdited)
+    async def handler(event):
+        try:
+            #log('New message received.')
+            sender = await event.get_sender()
+
+            #str(type(sender)) != "<class 'telethon.tl.types.User'>"
+            
+            chat_entity = await client.get_entity(event.message.peer_id)
+  
+            if str(type(sender)) == "<class 'telethon.tl.types.User'>":
+                name = chat_entity.title if hasattr(chat_entity, 'title') else 'Unknown Group'
+            else:
+                name = utils.get_display_name(sender)
+            #print('Group name is ',group_name)
+            #print('Sender type ',str(type(sender)))
+            msg = ""
+
+            allowed_chats = list()
+
+            for i in range(ui.chatList.count()):
+                allowed_chats.append(ui.chatList.item(i).text())
+
+            if name not in allowed_chats:
+                return
+
+            if event.is_reply:
+                reply = await event.get_reply_message()
+                msg = reply.raw_text
+                msg = msg.replace("|", "")
+                msg = msg.replace("{", "")
+                msg = msg.replace("}", "")
+                msg = msg + "|" + event.raw_text + " {" + str(reply.id) + "}"
+            else:
+                msg = event.raw_text
+                msg = msg.replace("|", "")
+                msg = msg.replace("{", "")
+                msg = msg.replace("}", "")
+                msg = msg  + " {" + str(event.id) + "}"
+            #sendToMT4(f'CH{allowed_chats.index(name) + 1}: {name}' + "\n" + msg + '\n\nEdited')
+            MSG = msg.upper()
+            ui.signalText.setText(msg[: msg.find("{")] + "\n\nFROM: " + name)
+        except Exception as e:
+            print("Failed to process last message. Error = ", e)
+    
+    async def run_client():
+        while not client:
+            await asyncio.sleep(1)
+
+        while not client.is_connected():
+            await asyncio.sleep(1)
+
+        print('Client exists and is connected.')
+
+        try:
+           async with client:
+            await client.run_until_disconnected()
+            print("Client disconnected.")
+        except asyncio.CancelledError:
+            print("Bot task was cancelled.")
                 
-
+        except Exception as e:
+            print("Failed to run bot. Error = ", e)
+        
+    
+    loop.run_until_complete(asyncio.gather(set_start_page(),handle_tg_code_request(),handle_tg_login(),update_chats(), check_termination(), run_client()))
 
     
-    loop.run_until_complete(asyncio.gather(set_start_page(),handle_tg_code_request(),handle_tg_login(),update_chats(), check_termination()))
-    
+        
+
 
 def close_app():
     global AppRunning
     print('Closing app')
+    ui.queue_in.put('stop') 
+    ui.logout()
+    ui.timer.stop()
     AppRunning = False
 
 queue_in = Queue()
@@ -527,6 +669,9 @@ queue_out = Queue()
 
 bot_thread = Thread(target=run_bot, args=(queue_in, queue_out))
 bot_thread.start()
+
+# client_thread = Thread(target=run_client, args=(client,))
+# client_thread.start()
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
