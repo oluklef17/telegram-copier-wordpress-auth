@@ -17,6 +17,7 @@ from datetime import datetime
 from telethon import TelegramClient, events, utils
 from client import run_client
 import sqlite3
+import json
 
 AppRunning = True
 
@@ -34,6 +35,7 @@ class Ui_MainWindow(object):
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(1312, 666)
         MainWindow.setStyleSheet("background-color:gray;")
+        self.AppRunning = True
         self.queue_in = queue_in
         self.queue_out = queue_out
         self.token_expires_in = None
@@ -203,8 +205,9 @@ class Ui_MainWindow(object):
         self.statusbar.setObjectName("statusbar")
         MainWindow.setStatusBar(self.statusbar)
 
+        self.login_if_return()
+
         self.retranslateUi(MainWindow)
-        self.stackedWidget.setCurrentIndex(1)
         self.backend_login.clicked.connect(self.handle_backend_login)
         self.tg_code_request_2.clicked.connect(self.handle_tg_code_request)
         self.tg_login_2.clicked.connect(self.handle_tg_login)
@@ -227,6 +230,36 @@ class Ui_MainWindow(object):
 
         x = msg.exec()
     
+    def login_if_return(self):
+        session_file = 'session_info.txt'
+        session_info = None
+        if os.path.exists(session_file):
+            with open(session_file, 'r') as f:
+                saved = f.read()
+                session_info = json.loads(saved)
+            self.initialize_ui(session_info)
+        else:
+            print('User logged out on last close.')
+            
+    
+    def save_session_info(self, session_info):
+        with open('session_info.txt', 'w') as f:
+            f.write(json.dumps(session_info))
+    
+    def initialize_ui(self, session_info):
+        self.openBotGUI(session_info)
+
+        if not self.timer.isActive():
+            self.timer.start(60000)
+
+        self.queue_in.put('start')
+        if os.path.exists('user.session'):
+            #self.queue_in.put('logged in')  
+            self.stackedWidget.setCurrentIndex(0)
+            print(self.stackedWidget.currentIndex())
+        else:
+            self.stackedWidget.setCurrentIndex(3)
+    
     def handle_backend_login(self):
         username = self.backend_username.text()
         password = self.backend_password.text()
@@ -237,21 +270,14 @@ class Ui_MainWindow(object):
             if response.status_code == 200:
                 session_info = response.json()
                 self.show_popup('Login Successful', "You are now logged in.", 1)
+                self.AppRunning = True
                 self.authWarning.setText(f"Logged in with session ID: {session_info['session_id']}")
                 self.authWarning.setStyleSheet("font:bold;color:green")
                 #print('Session info: ',session_info)
                 #QtWidgets.QMessageBox.information(self, 'Login Successful', "You are now logged in.")
-                self.openBotGUI(session_info)
+                self.save_session_info(session_info)
+                self.initialize_ui(session_info)
 
-                if not self.timer.isActive():
-                    self.timer.start(60000)
-
-                self.queue_in.put('start')
-                if os.path.exists('user.session'):
-                    #self.queue_in.put('logged in')       
-                    self.stackedWidget.setCurrentIndex(0)
-                else:
-                    self.stackedWidget.setCurrentIndex(3)
             else:
                 self.show_popup('Login Failed', "Invalid credentials or server error.", 2)
                 #QtWidgets.QMessageBox.warning(self, 'Login Failed', 'Invalid credentials or server error.')
@@ -279,8 +305,17 @@ class Ui_MainWindow(object):
                 self.show_popup('Logout Failed', 'Could not connect to server.', 0)
                 #QtWidgets.QMessageBox.critical(self, 'Logout Failed', 'Could not connect to server.')
                 return
-        self.timer.stop()
-        self.queue_in.put('stop')
+        
+        try:
+            self.timer.timeout.disconnect(self.refreshSessionIfNeeded)
+            session_file = 'session_info.txt'
+            if os.path.exists(session_file):
+                os.remove(session_file)
+        except Exception as e:
+            print(f'Could not disconnect refreshTimerIfNeeded function ({e})')
+
+        self.AppRunning = False
+        #self.queue_in.put('stop')
         self.show_popup('Logout Successful', 'You have been logged out.', 1)
         #QMessageBox.information(self, 'Logout Successful', 'You have been logged out.')
         self.stackedWidget.setCurrentIndex(2)
@@ -295,23 +330,6 @@ class Ui_MainWindow(object):
         self.timer.timeout.connect(self.refreshSessionIfNeeded)
         self.timer.start(60000)  # Refresh every 60 seconds
     
-    def logout(self, force=False):
-        if not force:
-            try:
-                response = requests.post("https://masterwithjosh.com/logout", json={"session_id": self.session_info['session_id']}, timeout=5)
-                if response.status_code != 200:
-                    self.show_popup('Logout Failed', "An error occurred while trying to log out.", 2)
-                    #QtWidgets.QMessageBox.warning(self, 'Logout Failed', 'An error occurred while trying to log out.')
-                    return
-            except requests.exceptions.RequestException:
-                self.show_popup('Logout Failed', "Could not connect to server.", 0)
-                #QtWidgets.QMessageBox.critical(self, 'Logout Failed', 'Could not connect to server.')
-                return
-        
-        self.show_popup('Logout Successful', "You have been logged out.", 1)
-        #QtWidgets.QMessageBox.information(self, 'Logout Successful', 'You have been logged out.')
-        self.queue_in.put('stop')
-        self.stackedWidget.setCurrentIndex(2)
     
     def validateSession(self):
         try:
@@ -411,9 +429,18 @@ def run_bot(queue_in, queue_out):
             await asyncio.sleep(1)
             try:
                 global gui_launched
-                if not queue_in.empty() and queue_in.get() == 'ui launched':
-                    ui.stackedWidget.setCurrentIndex(2)
-                    gui_launched = True
+                if gui_launched:
+                    print('Setting start page')
+                    print('Ui launched')
+
+                    if not client.is_connected():
+                        await client.connect()
+
+                    if await client.is_user_authorized():
+                        ui.stackedWidget.setCurrentIndex(0)
+                    else:
+                        ui.stackedWidget.setCurrentIndex(2)
+                    #gui_launched = True
                     break
                 else:
                     continue
@@ -496,8 +523,9 @@ def run_bot(queue_in, queue_out):
                     
                     if database_locked:
                         continue
-
-                    await client.connect()
+                    
+                    if not client.is_connected():
+                        await client.connect()
                    
                     if await client.is_user_authorized():
                         async for dialog in client.iter_dialogs():
@@ -505,6 +533,7 @@ def run_bot(queue_in, queue_out):
                                 ui.chatSelect.setPlaceholderText("------Select chats to scan for messages-----")
                                 ui.chatSelect.addItem(dialog.title)
                         #client.disconnect()
+                        await run_client()
                         break
 
                     else:
@@ -518,8 +547,6 @@ def run_bot(queue_in, queue_out):
                 continue
     
     async def check_termination():
-        global AppRunning
-        global client
         while AppRunning:
             await asyncio.sleep(1)
             try:
@@ -528,10 +555,10 @@ def run_bot(queue_in, queue_out):
                     if client:
                         print('Disconnecting client.')
                         await client.disconnect()
-                    AppRunning = False
+                    close_app()
                 elif not queue_in.empty() and queue_in.get() == 'start':
                     print('Starting app')
-                    AppRunning = True
+                    #AppRunning = True
                 else:
                     continue
             except Exception as e:
@@ -540,6 +567,12 @@ def run_bot(queue_in, queue_out):
     @client.on(events.NewMessage())
     async def handler(event):
         try:
+            if not ui:
+                return
+            
+            if not ui.AppRunning:
+                return
+            
             #log('New message received.')
             sender = await event.get_sender()
 
@@ -588,6 +621,12 @@ def run_bot(queue_in, queue_out):
     @client.on(events.MessageEdited)
     async def handler(event):
         try:
+            if not ui:
+                return
+            
+            if not ui.AppRunning:
+                return
+            
             #log('New message received.')
             sender = await event.get_sender()
 
@@ -640,7 +679,7 @@ def run_bot(queue_in, queue_out):
         print('Client exists and is connected.')
 
         try:
-           async with client:
+            await client.start()
             await client.run_until_disconnected()
             print("Client disconnected.")
         except asyncio.CancelledError:
@@ -649,8 +688,8 @@ def run_bot(queue_in, queue_out):
         except Exception as e:
             print("Failed to run bot. Error = ", e)
         
-    
-    loop.run_until_complete(asyncio.gather(set_start_page(),handle_tg_code_request(),handle_tg_login(),update_chats(), check_termination(), run_client()))
+    #loop.create_task(run_client())
+    loop.run_until_complete(asyncio.gather(set_start_page(),handle_tg_code_request(),handle_tg_login(),update_chats(), check_termination()))
 
     
         
@@ -659,8 +698,9 @@ def run_bot(queue_in, queue_out):
 def close_app():
     global AppRunning
     print('Closing app')
-    ui.queue_in.put('stop') 
-    ui.logout()
+    #ui.queue_in.put('stop')
+    client.disconnect()
+    #ui.logout()
     ui.timer.stop()
     AppRunning = False
 
@@ -680,5 +720,7 @@ if __name__ == '__main__':
     ui = Ui_MainWindow()
     ui.setupUi(MainWindow, queue_in, queue_out)
     queue_in.put('ui launched')
+    gui_launched = True
     MainWindow.show()
+    print('Final page: ',ui.stackedWidget.currentIndex())
     sys.exit(app.exec())
