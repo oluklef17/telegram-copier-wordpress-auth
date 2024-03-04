@@ -477,6 +477,7 @@ class Ui_MainWindow(object):
         self.backend_username.setPlaceholderText(_translate("MainWindow", "Username"))
         self.backend_password.setPlaceholderText(_translate("MainWindow", "Password"))
         self.backend_password.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+        self.tg_password_2.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
         self.backend_login.setText(_translate("MainWindow", "Login"))
         self.tg_phone_2.setPlaceholderText(_translate("MainWindow", "Telegram number (+XYZ...)"))
         self.tg_password_2.setPlaceholderText(_translate("MainWindow", "Password (if none, leave empty)"))
@@ -490,7 +491,26 @@ def run_bot(queue_in, queue_out):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
+    if not client:
+        try:
+            sess = session if os.path.exists('user.session') else 'empty'
+            client = TelegramClient(session=sess, api_id=api_id, api_hash=api_hash)
+        except Exception as e:
+            print(f'Could not initialize client. Reason: {e}')
+
+    async def initClient():
+        global client
+        client = TelegramClient(session=sess, api_id=api_id, api_hash=api_hash)
+    
+    async def check_client():
+        while AppRunning:
+            await asyncio.sleep(1)
+
+            if not gui_launched:
+                continue
+
+            
+            await initClient()
 
     async def sendToMT4(data):
         global currentList
@@ -510,6 +530,10 @@ def run_bot(queue_in, queue_out):
             await asyncio.sleep(1)
             try:
                 global gui_launched
+                global session
+                global api_id
+                global api_hash
+                global client
                 if gui_launched:
                     print('Setting start page')
                     print('Ui launched')
@@ -518,10 +542,17 @@ def run_bot(queue_in, queue_out):
                         if not os.path.exists('session_info.txt'):
                             ui.stackedWidget.setCurrentIndex(2)
                         else:
-                            if await client.is_user_authorized():
-                                ui.stackedWidget.setCurrentIndex(0)
+                            if not client:
+                                if os.path.exists('user.session'):
+                                    client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
+                                    ui.stackedWidget.setCurrentIndex(0)
+                                else:
+                                    ui.stackedWidget.setCurrentIndex(3)
                             else:
-                                ui.stackedWidget.setCurrentIndex(3)
+                                if await client.is_user_authorized():
+                                    ui.stackedWidget.setCurrentIndex(0)
+                                else:
+                                    ui.stackedWidget.setCurrentIndex(3)
                     except Exception as e:
                         print(f'Could not set start page.{e}')
                         continue
@@ -577,6 +608,7 @@ def run_bot(queue_in, queue_out):
 
                     if client.is_user_authorized:
                         ui.stackedWidget.setCurrentIndex(0)
+                        await initClient()
                         break
                     else:
                         continue
@@ -623,6 +655,10 @@ def run_bot(queue_in, queue_out):
                 global api_id
                 global api_hash
                 global gui_launched
+
+                if not client:
+                    continue
+
                 if gui_launched and ui.stackedWidget.currentIndex() == 0:
                     database_locked = False
 
@@ -709,7 +745,7 @@ def run_bot(queue_in, queue_out):
 
             
             if name not in allowed_chats:
-               return
+                return
 
             if event.is_reply:
                 reply = await event.get_reply_message()
@@ -731,7 +767,7 @@ def run_bot(queue_in, queue_out):
         except Exception as e:
             print("Failed to process last message. Error = ", e)
 
-    
+        
     @client.on(events.MessageEdited)
     async def handler(event):
         try:
@@ -747,7 +783,7 @@ def run_bot(queue_in, queue_out):
             #str(type(sender)) != "<class 'telethon.tl.types.User'>"
             
             chat_entity = await client.get_entity(event.message.peer_id)
-  
+
             if str(type(sender)) == "<class 'telethon.tl.types.User'>":
                 name = chat_entity.title if hasattr(chat_entity, 'title') else 'Unknown Group'
             else:
@@ -801,7 +837,7 @@ def run_bot(queue_in, queue_out):
                 
         except Exception as e:
             print("Failed to run bot. Error = ", e)
-        
+    
     #loop.create_task(run_client())
     loop.run_until_complete(asyncio.gather(set_start_page(),handle_tg_code_request(),handle_tg_login(),update_chats(), update_terminals(), check_termination()))
 
@@ -813,7 +849,8 @@ def close_app():
     global AppRunning
     print('Closing app')
     #ui.queue_in.put('stop')
-    client.disconnect()
+    if client:
+        client.disconnect()
     #ui.logout()
     ui.timer.stop()
     AppRunning = False
