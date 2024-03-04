@@ -42,7 +42,6 @@ class Ui_MainWindow(object):
         self.queue_in = queue_in
         self.queue_out = queue_out
         self.token_expires_in = None
-        self.initSessionRefreshTimer()
         self.centralwidget = QtWidgets.QWidget(parent=MainWindow)
         self.centralwidget.setObjectName("centralwidget")
         self.stackedWidget = QtWidgets.QStackedWidget(parent=self.centralwidget)
@@ -146,6 +145,7 @@ class Ui_MainWindow(object):
         self.backend_username.setObjectName("backend_username")
         self.verticalLayout.addWidget(self.backend_username)
         self.backend_password = QtWidgets.QLineEdit(parent=self.layoutWidget)
+        self.backend_password.setParent
         self.backend_password.setStyleSheet("background-color:rgba(0, 0, 0, 0);\n"
 "border:none;\n"
 "border-bottom:2px solid rgba(105, 118, 132, 255);\n"
@@ -208,9 +208,15 @@ class Ui_MainWindow(object):
         self.statusbar.setObjectName("statusbar")
         MainWindow.setStatusBar(self.statusbar)
 
+        
+        self.session_info = None
+        self.initSessionRefreshTimer()
+
+        #Auto login if client did not log out on previous session
         self.login_if_return()
 
-        self.retranslateUi(MainWindow)
+
+        #Connect functions to corresponding buttons
         self.backend_login.clicked.connect(self.handle_backend_login)
         self.tg_code_request_2.clicked.connect(self.handle_tg_code_request)
         self.tg_login_2.clicked.connect(self.handle_tg_login)
@@ -219,56 +225,73 @@ class Ui_MainWindow(object):
         self.terminalButton.clicked.connect(self.updateTerminalList)
 
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
+
+        self.retranslateUi(MainWindow)
     
     def show_popup(self, title, text, mode=0):
-        msg = QtWidgets.QMessageBox()
-        msg.setWindowTitle(title)
-        msg.setText(text)
+        try:
+            msg = QtWidgets.QMessageBox()
+            msg.setWindowTitle(title)
+            msg.setText(text)
 
-        if mode == 0:
-            msg.setIcon(QtWidgets.QMessageBox.Icon.Critical)
-        elif mode == 1:
-            msg.setIcon(QtWidgets.QMessageBox.Icon.Information)
-        elif mode == 2:
-            msg.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+            if mode == 0:
+                msg.setIcon(QtWidgets.QMessageBox.Icon.Critical)
+            elif mode == 1:
+                msg.setIcon(QtWidgets.QMessageBox.Icon.Information)
+            elif mode == 2:
+                msg.setIcon(QtWidgets.QMessageBox.Icon.Warning)
 
-        x = msg.exec()
+            x = msg.exec()
+        except Exception as e:
+            print(f'Failed to show messagebox. Reason: {e}')
+            return
     
     def login_if_return(self):
-        session_file = 'session_info.txt'
-        session_info = None
-        if os.path.exists(session_file):
-            with open(session_file, 'r') as f:
-                saved = f.read()
-                session_info = json.loads(saved)
-            self.initialize_ui(session_info)
-        else:
-            print('User logged out on last close.')
+        try:
+            session_file = 'session_info.txt'
+            session_info = None
+            if os.path.exists(session_file):
+                with open(session_file, 'r') as f:
+                    saved = f.read()
+                    session_info = json.loads(saved)
+                self.initialize_ui(session_info)
+            else:
+                print('User logged out on last close.')
+        except Exception as e:
+            self.show_popup('Auto login failed', f'Failed to execute auto login. Reason: {e}. Please close application and relaunch.', 2)
             
     
     def save_session_info(self, session_info):
-        with open('session_info.txt', 'w') as f:
-            f.write(json.dumps(session_info))
+        try:
+            with open('session_info.txt', 'w') as f:
+                f.write(json.dumps(session_info))
+        except Exception as e:
+            self.show_popup('Session save failed', f'Could not save session info file. Reason: {e}', 1)
     
     def initialize_ui(self, session_info):
-        self.openBotGUI(session_info)
+        try:
+            self.openBotGUI(session_info)
 
-        if not self.timer.isActive():
-            self.timer.start(60000)
+            twelve_days_in_milliseconds = 12 * 24 * 60 * 60 * 1000
 
-        self.queue_in.put('start')
-        if os.path.exists('user.session'):
-            #self.queue_in.put('logged in')  
-            self.stackedWidget.setCurrentIndex(0)
-            print(self.stackedWidget.currentIndex())
-        else:
-            self.stackedWidget.setCurrentIndex(3)
+            if not self.timer.isActive():
+                self.timer.start(twelve_days_in_milliseconds)
+
+            self.queue_in.put('start')
+            if os.path.exists('user.session'):
+                self.stackedWidget.setCurrentIndex(0)
+            else:
+                self.stackedWidget.setCurrentIndex(3)
+        except Exception as e:
+            self.show_popup('UI initialization failed', f'Could not initialize UI. Reason: {e}. Please relaunch application', 1)
     
     def handle_backend_login(self):
         username = self.backend_username.text()
         password = self.backend_password.text()
-        print('Username is ',username)
-        print('Password is ',password)
+        
+        if len(username) == 0 or len(password) == 0:
+            self.show_popup('Invalid username and/or password', f'Please ensure username and passwords are valid and retry.', 2)
+            return
         try:
             response = requests.post("https://masterwithjosh.com/login", json={"username": username, "password": password}, timeout=5)
             if response.status_code == 200:
@@ -277,37 +300,27 @@ class Ui_MainWindow(object):
                 self.AppRunning = True
                 self.authWarning.setText(f"Logged in with session ID: {session_info['session_id']}")
                 self.authWarning.setStyleSheet("font:bold;color:green")
-                #print('Session info: ',session_info)
-                #QtWidgets.QMessageBox.information(self, 'Login Successful', "You are now logged in.")
                 self.save_session_info(session_info)
                 self.initialize_ui(session_info)
 
             else:
                 self.show_popup('Login Failed', "Invalid credentials or server error.", 2)
-                #QtWidgets.QMessageBox.warning(self, 'Login Failed', 'Invalid credentials or server error.')
         except requests.exceptions.RequestException as e:
             self.show_popup('Login Failed', "Could not connect to server.", 0)
-            #QtWidgets.QMessageBox.critical(self, 'Login Failed', 'Could not connect to server.')
-        # if username == 'Yemi' and password == 'admin':
-        #     if os.path.exists('user.session'):
-        #         #self.queue_in.put('logged in')
-        #         self.stackedWidget.setCurrentIndex(0)
-        #     else:
-        #         self.stackedWidget.setCurrentIndex(3)
-        # else:
-        #     print('Username or password incorrect.')
-    
+        
     def logout(self, force=False):
         if not force:
             try:
+                if not self.session_info:
+                    print('Session info has no value')
+                    return
+                
                 response = requests.post("https://masterwithjosh.com/logout", json={"session_id": self.session_info['session_id']}, timeout=5)
                 if response.status_code != 200:
                     self.show_popup('Logout Failed', 'An error occurred while trying to log out.', 2)
-                    #QtWidgets.QMessageBox.warning(self, 'Logout Failed', 'An error occurred while trying to log out.')
                     return
             except requests.exceptions.RequestException:
                 self.show_popup('Logout Failed', 'Could not connect to server.', 0)
-                #QtWidgets.QMessageBox.critical(self, 'Logout Failed', 'Could not connect to server.')
                 return
         
         try:
@@ -315,29 +328,38 @@ class Ui_MainWindow(object):
             session_file = 'session_info.txt'
             if os.path.exists(session_file):
                 os.remove(session_file)
+            
+            self.AppRunning = False
+            self.show_popup('Logout Successful', 'You have been logged out.', 1)
+            self.stackedWidget.setCurrentIndex(2)
         except Exception as e:
-            print(f'Could not disconnect refreshTimerIfNeeded function ({e})')
+            self.show_popup('Logout failed', f'Some error occurred while logging out: {e}')
 
-        self.AppRunning = False
-        #self.queue_in.put('stop')
-        self.show_popup('Logout Successful', 'You have been logged out.', 1)
-        #QMessageBox.information(self, 'Logout Successful', 'You have been logged out.')
-        self.stackedWidget.setCurrentIndex(2)
+        
         
     
     def openBotGUI(self, session_info):
-        self.session_info = session_info
-        self.initSessionRefreshTimer()
+        try:
+            self.session_info = session_info
+            self.initSessionRefreshTimer()
+        except Exception as e:
+            self.show_popup('Session initialization failed', 'Some error occured while initializing session: {e}')
     
     def initSessionRefreshTimer(self):
-        twelve_days_in_milliseconds = 60000#12 * 24 * 60 * 60 * 1000  # 12 days
-        self.timer = QtCore.QTimer()
-        self.timer.timeout.connect(self.refreshToken)
-        self.timer.start(twelve_days_in_milliseconds)
+        try:
+            twelve_days_in_milliseconds = 12 * 24 * 60 * 60 * 1000  # 12 days
+            self.timer = QtCore.QTimer()
+            self.timer.timeout.connect(self.refreshToken)
+            self.timer.start(twelve_days_in_milliseconds)
+        except Exception as e:
+            self.show_popup('Session refresh timer failed', 'Could not refresh session timer. Reason: {e}')
     
     
     def validateSession(self):
         try:
+            if not self.session_info:
+                return
+            
             response = requests.post("https://masterwithjosh.com/session/validate", json={"session_id": self.session_info['session_id']}, timeout=5)
             if response.status_code != 200:
                 self.show_popup('Session Ended', "Your session has ended. Please log in again.", 2)
@@ -348,13 +370,17 @@ class Ui_MainWindow(object):
             #QtWidgets.QMessageBox.critical(self, 'Session Validation Failed', 'Could not validate session with server.')
     
     def refreshToken(self):
-        # Replace with the actual URL of your refresh endpoint
-        refresh_url = 'https://masterwithjosh.com/token/refresh'
-        headers = {'Content-Type': 'application/json'}
-        # Assuming 'token' is the correct key for the JWT token in your session_info
-        data = {'token': self.session_info['token'], 'session_id': self.session_info['session_id']}
+        if not self.session_info:
+            return
+        
 
         try:
+            # Replace with the actual URL of your refresh endpoint
+            refresh_url = 'https://masterwithjosh.com/token/refresh'
+            headers = {'Content-Type': 'application/json'}
+            # Assuming 'token' is the correct key for the JWT token in your session_info
+            data = {'token': self.session_info['token'], 'session_id': self.session_info['session_id']}
+
             response = requests.post(refresh_url, json=data, headers=headers)
             if response.status_code == 200:
                 new_token_info = response.json()
@@ -376,48 +402,61 @@ class Ui_MainWindow(object):
 
     
     def refreshSessionIfNeeded(self):
-        # Assuming the server provides the expiry time as a UNIX timestamp
-        print('Attempting session validation')
-        self.validateSession()
-        if self.token_expires_in and datetime.now().timestamp() >= self.token_expires_in - 300:  # Refresh if within 5 minutes of expiry
-            print('Attempting token refresh.')
-            self.refreshToken()
-        if self.token_expires_in:
-            print('Token expires in ',self.token_expires_in)
+        try:
+            # Assuming the server provides the expiry time as a UNIX timestamp
+            print('Attempting session validation')
+            self.validateSession()
+            if self.token_expires_in and datetime.now().timestamp() >= self.token_expires_in - 300:  # Refresh if within 5 minutes of expiry
+                print('Attempting token refresh.')
+                self.refreshToken()
+            if self.token_expires_in:
+                print('Token expires in ',self.token_expires_in)
+        except Exception as e:
+            self.show_popup('Session refresh failed', 'Could not refresh session. Reason: {e}')
     
     def handle_tg_code_request(self):
-        self.queue_in.put('get tg code')
+        try:
+            self.queue_in.put('get tg code')
+        except Exception as e:
+            self.show_popup('Code request queue failed', 'Could not queue telegram code request. Reason: {e}')
     
     def handle_tg_login(self):
-        self.queue_in.put('login to tg')
+        try:
+            self.queue_in.put('login to tg')
+        except Exception as e:
+            self.show_popup('Login request queue failed', 'Could not queue telegram login request. Reason: {e}')
     
     def add_chats(self):
-        current_chat = self.chatSelect.currentText()
-        already_added = list()
-        for i in range(self.chatList.count()):
-            already_added.append(self.chatList.item(i).text())
+        try:
+            current_chat = self.chatSelect.currentText()
+            already_added = list()
+            for i in range(self.chatList.count()):
+                already_added.append(self.chatList.item(i).text())
 
-        #print('Chats: ',already_added)
-
-        if current_chat not in already_added:
-            self.chatList.addItem(current_chat)
+            if current_chat not in already_added:
+                self.chatList.addItem(current_chat)
+        except Exception as e:
+            self.show_popup('Chat add failed', f'Could not add {current_chat} to chat. Reason: {e}')
     
     def updateTerminalList(self):
-        global currentList
-        home = os.path.expanduser('~')
-        starting_directory = os.path.join(home, 'AppData','Roaming','MetaQuotes','Terminal')
-        currentTerminal = self.terminalEdit.currentText()
-        for i in range(self.terminalList.count()):
-            if str(self.terminalList.item(i).text()) not in currentList:
-                currentList.append(str(self.terminalList.item(i).text()))
-        
-        full_path = os.path.join(starting_directory, currentTerminal)
+        try:
+            global currentList
+            home = os.path.expanduser('~')
+            starting_directory = os.path.join(home, 'AppData','Roaming','MetaQuotes','Terminal')
+            currentTerminal = self.terminalEdit.currentText()
+            for i in range(self.terminalList.count()):
+                if str(self.terminalList.item(i).text()) not in currentList:
+                    currentList.append(str(self.terminalList.item(i).text()))
+            
+            full_path = os.path.join(starting_directory, currentTerminal)
 
-        if len(currentTerminal) > 0 and currentTerminal != "Select MT4 terminal path here..." and full_path not in currentList:
-            currentList.append(full_path)
-        #log("Terminal list is ", currentList)
-        self.terminalList.clear()
-        self.terminalList.addItems(currentList)
+            if len(currentTerminal) > 0 and currentTerminal != "Select MT4 terminal path here..." and full_path not in currentList:
+                currentList.append(full_path)
+            
+            self.terminalList.clear()
+            self.terminalList.addItems(currentList)
+        except Exception as e:
+            self.show_popup('Terminal list update failed', f'Could not update terminal list. Reason: {e}')
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
@@ -437,6 +476,7 @@ class Ui_MainWindow(object):
         self.label.setText(_translate("MainWindow", "LOADING..."))
         self.backend_username.setPlaceholderText(_translate("MainWindow", "Username"))
         self.backend_password.setPlaceholderText(_translate("MainWindow", "Password"))
+        self.backend_password.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
         self.backend_login.setText(_translate("MainWindow", "Login"))
         self.tg_phone_2.setPlaceholderText(_translate("MainWindow", "Telegram number (+XYZ...)"))
         self.tg_password_2.setPlaceholderText(_translate("MainWindow", "Password (if none, leave empty)"))
@@ -475,10 +515,13 @@ def run_bot(queue_in, queue_out):
                     print('Ui launched')
 
                     try:
-                        if await client.is_user_authorized():
-                            ui.stackedWidget.setCurrentIndex(0)
-                        else:
+                        if not os.path.exists('session_info.txt'):
                             ui.stackedWidget.setCurrentIndex(2)
+                        else:
+                            if await client.is_user_authorized():
+                                ui.stackedWidget.setCurrentIndex(0)
+                            else:
+                                ui.stackedWidget.setCurrentIndex(3)
                     except Exception as e:
                         print(f'Could not set start page.{e}')
                         continue
