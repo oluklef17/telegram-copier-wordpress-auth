@@ -330,7 +330,7 @@ class Ui_MainWindow(object):
         self.initSessionRefreshTimer()
     
     def initSessionRefreshTimer(self):
-        twelve_days_in_milliseconds = 12 * 24 * 60 * 60 * 1000  # 12 days
+        twelve_days_in_milliseconds = 60000#12 * 24 * 60 * 60 * 1000  # 12 days
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.refreshToken)
         self.timer.start(twelve_days_in_milliseconds)
@@ -359,10 +359,16 @@ class Ui_MainWindow(object):
             if response.status_code == 200:
                 new_token_info = response.json()
                 # Update the token in session info with the new token
+                prev_token = self.session_info['token']
                 self.session_info['token'] = new_token_info.get('access_token')
+                new_token = self.session_info['token']
+                #print(f'Previous token: {prev_token}, New token: {new_token}')
                 # Optionally, update the token expiration time if it's included in the response
                 # self.session_info['expires_in'] = new_token_info.get('expires_in', self.session_info.get('expires_in'))
-                self.show_popup('Session Refreshed', "Session has been successfully refreshed.", 1)
+                if prev_token != new_token:
+                    self.show_popup('Session Refreshed', "Session has been successfully refreshed.", 1)
+                else:
+                    self.show_popup('Session Not Refreshed', "Could not refresh session. Token remains the same.", 1)
             else:
                 self.show_popup('Session Refresh Failed', "Failed to refresh your session. Please login again.", 2)
         except requests.exceptions.RequestException as e:
