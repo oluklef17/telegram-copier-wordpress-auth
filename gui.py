@@ -307,7 +307,7 @@ class Ui_MainWindow(object):
                 return
         
         try:
-            self.timer.timeout.disconnect(self.refreshSessionIfNeeded)
+            self.timer.timeout.disconnect(self.refreshToken)
             session_file = 'session_info.txt'
             if os.path.exists(session_file):
                 os.remove(session_file)
@@ -326,9 +326,10 @@ class Ui_MainWindow(object):
         self.initSessionRefreshTimer()
     
     def initSessionRefreshTimer(self):
+        twelve_days_in_milliseconds = 12 * 24 * 60 * 60 * 1000  # 12 days
         self.timer = QtCore.QTimer()
-        self.timer.timeout.connect(self.refreshSessionIfNeeded)
-        self.timer.start(60000)  # Refresh every 60 seconds
+        self.timer.timeout.connect(self.refreshToken)
+        self.timer.start(twelve_days_in_milliseconds)
     
     
     def validateSession(self):
@@ -346,24 +347,23 @@ class Ui_MainWindow(object):
         # Replace with the actual URL of your refresh endpoint
         refresh_url = 'https://masterwithjosh.com/token/refresh'
         headers = {'Content-Type': 'application/json'}
+        # Assuming 'token' is the correct key for the JWT token in your session_info
         data = {'token': self.session_info['token'], 'session_id': self.session_info['session_id']}
 
         try:
             response = requests.post(refresh_url, json=data, headers=headers)
             if response.status_code == 200:
                 new_token_info = response.json()
-                self.access_token = new_token_info.get('access_token')
-                # Update the expiration time if provided by the server
-                self.token_expires_in = new_token_info.get('expires_in', self.token_expires_in)
+                # Update the token in session info with the new token
+                self.session_info['token'] = new_token_info.get('access_token')
+                # Optionally, update the token expiration time if it's included in the response
+                # self.session_info['expires_in'] = new_token_info.get('expires_in', self.session_info.get('expires_in'))
                 self.show_popup('Session Refreshed', "Session has been successfully refreshed.", 1)
-                #QtWidgets.QMessageBox.information(self, 'Session Refreshed', 'Session has been successfully refreshed.')
             else:
                 self.show_popup('Session Refresh Failed', "Failed to refresh your session. Please login again.", 2)
-                #QtWidgets.QMessageBox.warning(self, 'Session Refresh Failed', 'Failed to refresh your session. Please login again.')
-                # Handle session refresh failure, possibly by logging out or prompting re-login
         except requests.exceptions.RequestException as e:
             self.show_popup('Network Error', "Unable to connect to the server to refresh the session.", 0)
-            #QtWidgets.QMessageBox.critical(self, 'Network Error', 'Unable to connect to the server to refresh the session.')
+
     
     def refreshSessionIfNeeded(self):
         # Assuming the server provides the expiry time as a UNIX timestamp
@@ -433,14 +433,15 @@ def run_bot(queue_in, queue_out):
                     print('Setting start page')
                     print('Ui launched')
 
-                    if not client.is_connected():
-                        await client.connect()
-
-                    if await client.is_user_authorized():
-                        ui.stackedWidget.setCurrentIndex(0)
-                    else:
-                        ui.stackedWidget.setCurrentIndex(2)
-                    #gui_launched = True
+                    try:
+                        if await client.is_user_authorized():
+                            ui.stackedWidget.setCurrentIndex(0)
+                        else:
+                            ui.stackedWidget.setCurrentIndex(2)
+                    except Exception as e:
+                        print(f'Could not set start page.{e}')
+                        continue
+                    
                     break
                 else:
                     continue
@@ -524,8 +525,11 @@ def run_bot(queue_in, queue_out):
                     if database_locked:
                         continue
                     
-                    if not client.is_connected():
-                        await client.connect()
+                    try:
+                     await client.connect()
+                    except Exception as e:
+                     print('Could not connect client. Error = ',e)
+                     continue
                    
                     if await client.is_user_authorized():
                         async for dialog in client.iter_dialogs():
