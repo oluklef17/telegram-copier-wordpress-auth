@@ -30,6 +30,9 @@ session = "user"
 api_id = int(os.environ.get("TG_API_ID"))
 api_hash = os.environ.get('TG_API_HASH')
 
+currentList = list()
+MQL4_paths = list()
+
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow, queue_in, queue_out):
         MainWindow.setObjectName("MainWindow")
@@ -94,7 +97,7 @@ class Ui_MainWindow(object):
         self.server_logout = QtWidgets.QPushButton(parent=self.page)
         self.server_logout.setGeometry(QtCore.QRect(600, 500, 100, 31))
         self.server_logout.setStyleSheet("background-color: qlineargradient(spread:pad, x1:0, y1:0.505682, x2:1, y2:0.477, stop:0 rgba(20, 47, 78, 219), stop:1 rgba(85, 98, 112, 226));color:rgba(255, 255, 255, 210);border-radius:5px;")
-        self.terminalEdit = QtWidgets.QLineEdit(parent=self.page)
+        self.terminalEdit = QtWidgets.QComboBox(parent=self.page)
         self.terminalEdit.setGeometry(QtCore.QRect(120, 200, 281, 41))
         self.terminalEdit.setStyleSheet("background-color:rgba(0, 0, 0, 0);\n"
 "border:none;\n"
@@ -213,6 +216,7 @@ class Ui_MainWindow(object):
         self.tg_login_2.clicked.connect(self.handle_tg_login)
         self.chatButton.clicked.connect(self.add_chats)
         self.server_logout.clicked.connect(self.logout)
+        self.terminalButton.clicked.connect(self.updateTerminalList)
 
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
     
@@ -391,6 +395,23 @@ class Ui_MainWindow(object):
 
         if current_chat not in already_added:
             self.chatList.addItem(current_chat)
+    
+    def updateTerminalList(self):
+        global currentList
+        home = os.path.expanduser('~')
+        starting_directory = os.path.join(home, 'AppData','Roaming','MetaQuotes','Terminal')
+        currentTerminal = self.terminalEdit.currentText()
+        for i in range(self.terminalList.count()):
+            if str(self.terminalList.item(i).text()) not in currentList:
+                currentList.append(str(self.terminalList.item(i).text()))
+        
+        full_path = os.path.join(starting_directory, currentTerminal)
+
+        if len(currentTerminal) > 0 and currentTerminal != "Select MT4 terminal path here..." and full_path not in currentList:
+            currentList.append(full_path)
+        #log("Terminal list is ", currentList)
+        self.terminalList.clear()
+        self.terminalList.addItems(currentList)
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
@@ -403,7 +424,8 @@ class Ui_MainWindow(object):
         self.terminalButton.setText(_translate("MainWindow", "Add Terminal"))
         self.chatButton.setText(_translate("MainWindow", "Add Chat"))
         #self.checkBox.setText(_translate("MainWindow", "LOGOUT ON EXIT"))
-        self.terminalEdit.setPlaceholderText(_translate("MainWindow", "Paste MT4/MT5 terminal path here"))
+        self.terminalEdit.setPlaceholderText(_translate("MainWindow", "Select MT4 terminal path here"))
+        self.chatSelect.setPlaceholderText(_translate("MainWindow", "------Select chats to scan for messages-----"))
         self.signalLabel.setText(_translate("MainWindow", "LAST SIGNAL RECEIVED:"))
         self.chatListLabel.setText(_translate("MainWindow", "Chat list"))
         self.label.setText(_translate("MainWindow", "LOADING..."))
@@ -423,6 +445,19 @@ def run_bot(queue_in, queue_out):
     asyncio.set_event_loop(loop)
 
     client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
+
+    async def sendToMT4(data):
+        global currentList
+        for i in currentList:
+            terminal = os.path.join(i, "MQL4", "Files")
+            if os.path.exists(terminal) == True:
+                print(f'Sending {data} to {terminal}')
+                if os.path.exists(os.path.join(terminal, "lastsignal.txt")) == False:
+                    p = open(os.path.join(terminal, "lastsignal.txt"), "x")
+                with open(
+                    os.path.join(terminal, "lastsignal.txt"), "w", encoding="utf-8"
+                ) as f:
+                    f.write(data)
 
     async def set_start_page():
         while AppRunning:
@@ -503,6 +538,33 @@ def run_bot(queue_in, queue_out):
                 print('Failed to login to telegram. Error = ',e)
                 continue
     
+    async def update_terminals():
+        global MQL4_paths
+        home = os.path.expanduser('~')
+        starting_directory = os.path.join(home, 'AppData','Roaming','MetaQuotes','Terminal')
+        while len(MQL4_paths) == 0:
+            await asyncio.sleep(1)
+            try:
+                current_directory = os.path.abspath(starting_directory)
+                while current_directory != os.path.dirname(current_directory):
+                    current_directory = os.path.dirname(current_directory)
+                for root, dirs, files in os.walk(starting_directory):
+                    for dir in dirs:
+                        path = os.path.join(root, dir)
+                        #log('Path: ',path)
+                        if path.endswith("MQL4") and 'MQL4' not in root:
+                            path = path.replace('MQL4', '')
+                            path = path.replace(starting_directory, '')
+                            path = path.replace('\\', '')
+                            MQL4_paths.append(path)
+                if len(MQL4_paths) > 0:
+                    #ui.terminalEdit.clear()
+                    for p in MQL4_paths:
+                        ui.terminalEdit.addItem(p)
+                    break
+            except Exception as e:
+                print('Failed to get MQL4 paths. Error = ',e)
+    
     async def update_chats():
         while AppRunning:
             await asyncio.sleep(1)
@@ -534,7 +596,6 @@ def run_bot(queue_in, queue_out):
                     if await client.is_user_authorized():
                         async for dialog in client.iter_dialogs():
                             if not dialog.is_user:
-                                ui.chatSelect.setPlaceholderText("------Select chats to scan for messages-----")
                                 ui.chatSelect.addItem(dialog.title)
                         #client.disconnect()
                         await run_client()
@@ -615,7 +676,7 @@ def run_bot(queue_in, queue_out):
                 msg = msg.replace("}", "")
                 msg = msg  + " {" + str(event.id) + "}"
             print('Message: ',msg)
-            #sendToMT4(f'CH{allowed_chats.index(name) + 1}: {name}' + "\n" + msg)
+            await sendToMT4(f'CH{allowed_chats.index(name) + 1}: {name}' + "\n" + msg)
             MSG = msg.upper()
             ui.signalText.setText(msg[: msg.find("{")] + "\n\nFROM: " + name)
         except Exception as e:
@@ -667,7 +728,7 @@ def run_bot(queue_in, queue_out):
                 msg = msg.replace("{", "")
                 msg = msg.replace("}", "")
                 msg = msg  + " {" + str(event.id) + "}"
-            #sendToMT4(f'CH{allowed_chats.index(name) + 1}: {name}' + "\n" + msg + '\n\nEdited')
+            await sendToMT4(f'CH{allowed_chats.index(name) + 1}: {name}' + "\n" + msg + '\n\nEdited')
             MSG = msg.upper()
             ui.signalText.setText(msg[: msg.find("{")] + "\n\nFROM: " + name)
         except Exception as e:
@@ -693,7 +754,7 @@ def run_bot(queue_in, queue_out):
             print("Failed to run bot. Error = ", e)
         
     #loop.create_task(run_client())
-    loop.run_until_complete(asyncio.gather(set_start_page(),handle_tg_code_request(),handle_tg_login(),update_chats(), check_termination()))
+    loop.run_until_complete(asyncio.gather(set_start_page(),handle_tg_code_request(),handle_tg_login(),update_chats(), update_terminals(), check_termination()))
 
     
         
@@ -726,5 +787,4 @@ if __name__ == '__main__':
     queue_in.put('ui launched')
     gui_launched = True
     MainWindow.show()
-    print('Final page: ',ui.stackedWidget.currentIndex())
     sys.exit(app.exec())
