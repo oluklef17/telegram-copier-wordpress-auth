@@ -62,6 +62,9 @@ class Ui_MainWindow(object):
         self.stackedWidget.setGeometry(QtCore.QRect(9, 9, 1211, 591))
         self.stackedWidget.setObjectName("stackedWidget")
 
+        self.centralwidget.setWindowFlags(QtCore.Qt.WindowType.FramelessWindowHint)
+        self.centralwidget.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
         self.stackedWidget.setWindowFlags(QtCore.Qt.WindowType.FramelessWindowHint)
         self.stackedWidget.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
         
@@ -94,7 +97,7 @@ class Ui_MainWindow(object):
         self.terminalListLabel.setObjectName("terminalListLabel")
         self.chatSelect = QtWidgets.QComboBox(parent=self.page)
         self.chatSelect.setGeometry(QtCore.QRect(821, 200, 281, 41))
-        self.chatSelect.setStyleSheet("background-color:rgba(0, 0, 0, 0);\n"
+        self.chatSelect.setStyleSheet("background-color: rgba(39, 39, 39, 0.2);\n"
 "border:none;\n"
 "border-bottom:2px solid rgba(105, 118, 132, 255);\n"
 "color:rgba(255, 255, 255, 230);\n"
@@ -117,7 +120,7 @@ class Ui_MainWindow(object):
         self.server_logout.setStyleSheet("background-color: qlineargradient(spread:pad, x1:0, y1:0.505682, x2:1, y2:0.477, stop:0 rgba(20, 47, 78, 219), stop:1 rgba(85, 98, 112, 226));color:rgba(255, 255, 255, 210);border-radius:5px;")
         self.terminalEdit = QtWidgets.QComboBox(parent=self.page)
         self.terminalEdit.setGeometry(QtCore.QRect(91, 200, 281, 41))
-        self.terminalEdit.setStyleSheet("background-color:rgba(0, 0, 0, 0);\n"
+        self.terminalEdit.setStyleSheet("background-color: rgba(39, 39, 39, 0.2);\n"
 "border:none;\n"
 "border-bottom:2px solid rgba(105, 118, 132, 255);\n"
 "color:rgba(255, 255, 255, 230);\n"
@@ -159,8 +162,9 @@ class Ui_MainWindow(object):
         self.verticalLayout = QtWidgets.QVBoxLayout(self.layoutWidget)
         self.verticalLayout.setContentsMargins(0, 0, 0, 0)
         self.verticalLayout.setObjectName("verticalLayout")
+
         self.backend_username = QtWidgets.QLineEdit(parent=self.layoutWidget)
-        self.backend_username.setStyleSheet("background-color:rgba(0, 0, 0, 0);\n"
+        self.backend_username.setStyleSheet("background-color: rgba(39, 39, 39, 0.2);\n"
 "border:none;\n"
 "border-bottom:2px solid rgba(105, 118, 132, 255);\n"
 "color:rgba(255, 255, 255, 230);\n"
@@ -169,7 +173,7 @@ class Ui_MainWindow(object):
         self.verticalLayout.addWidget(self.backend_username)
         self.backend_password = QtWidgets.QLineEdit(parent=self.layoutWidget)
         self.backend_password.setParent
-        self.backend_password.setStyleSheet("background-color:rgba(0, 0, 0, 0);\n"
+        self.backend_password.setStyleSheet("background-color: rgba(39, 39, 39, 0.2);\n"
 "border:none;\n"
 "border-bottom:2px solid rgba(105, 118, 132, 255);\n"
 "color:rgba(255, 255, 255, 230);\n"
@@ -190,7 +194,7 @@ class Ui_MainWindow(object):
         self.verticalLayout_5.setContentsMargins(0, 0, 0, 0)
         self.verticalLayout_5.setObjectName("verticalLayout_5")
         self.tg_phone_2 = QtWidgets.QLineEdit(parent=self.layoutWidget_5)
-        self.tg_phone_2.setStyleSheet("background-color:rgba(0, 0, 0, 0);\n"
+        self.tg_phone_2.setStyleSheet("background-color: rgba(39, 39, 39, 0.2);\n"
 "border:none;\n"
 "border-bottom:2px solid rgba(105, 118, 132, 255);\n"
 "color:rgba(255, 255, 255, 230);\n"
@@ -198,7 +202,7 @@ class Ui_MainWindow(object):
         self.tg_phone_2.setObjectName("tg_phone_2")
         self.verticalLayout_5.addWidget(self.tg_phone_2)
         self.tg_password_2 = QtWidgets.QLineEdit(parent=self.layoutWidget_5)
-        self.tg_password_2.setStyleSheet("background-color:rgba(0, 0, 0, 0);\n"
+        self.tg_password_2.setStyleSheet("background-color: rgba(39, 39, 39, 0.2);\n"
 "border:none;\n"
 "border-bottom:2px solid rgba(105, 118, 132, 255);\n"
 "color:rgba(255, 255, 255, 230);\n"
@@ -210,7 +214,7 @@ class Ui_MainWindow(object):
         self.tg_code_request_2.setObjectName("tg_code_request_2")
         self.verticalLayout_5.addWidget(self.tg_code_request_2)
         self.tg_code_2 = QtWidgets.QLineEdit(parent=self.layoutWidget_5)
-        self.tg_code_2.setStyleSheet("background-color:rgba(0, 0, 0, 0);\n"
+        self.tg_code_2.setStyleSheet("background-color: rgba(39, 39, 39, 0.2);\n"
 "border:none;\n"
 "border-bottom:2px solid rgba(105, 118, 132, 255);\n"
 "color:rgba(255, 255, 255, 230);\n"
