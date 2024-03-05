@@ -18,12 +18,14 @@ from telethon import TelegramClient, events, utils
 from client import run_client
 import sqlite3
 import json
+import time
 
 AppRunning = True
 
 gui_launched = False
+session_validated = False
 
-client = {'on' : 'Message'}
+client = None
 phone = None
 phone_code_hash = None
 session = "user"
@@ -208,7 +210,7 @@ class Ui_MainWindow(object):
         self.statusbar.setObjectName("statusbar")
         MainWindow.setStatusBar(self.statusbar)
 
-        self.client = None
+        
         self.session_info = None
         self.initSessionRefreshTimer()
 
@@ -278,9 +280,7 @@ class Ui_MainWindow(object):
                 self.timer.start(twelve_days_in_milliseconds)
 
             self.queue_in.put('start')
-
             if os.path.exists('user.session'):
-                self.client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
                 self.stackedWidget.setCurrentIndex(0)
             else:
                 self.stackedWidget.setCurrentIndex(3)
@@ -419,14 +419,15 @@ class Ui_MainWindow(object):
     def handle_tg_code_request(self):
         try:
             self.queue_in.put('get tg code')
+            self.show_popup('Code request sent', 'Telegram code request sent', 1)
         except Exception as e:
-            self.show_popup('Code request queue failed', 'Could not queue telegram code request. Reason: {e}')
+            self.show_popup(f'Code request queue failed', 'Could not queue telegram code request. Reason: {e}')
     
     def handle_tg_login(self):
         try:
             self.queue_in.put('login to tg')
         except Exception as e:
-            self.show_popup('Login request queue failed', 'Could not queue telegram login request. Reason: {e}')
+            self.show_popup(f'Login request queue failed', 'Could not queue telegram login request. Reason: {e}')
     
     def add_chats(self):
         try:
@@ -479,7 +480,6 @@ class Ui_MainWindow(object):
         self.backend_username.setPlaceholderText(_translate("MainWindow", "Username"))
         self.backend_password.setPlaceholderText(_translate("MainWindow", "Password"))
         self.backend_password.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
-        self.tg_password_2.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
         self.backend_login.setText(_translate("MainWindow", "Login"))
         self.tg_phone_2.setPlaceholderText(_translate("MainWindow", "Telegram number (+XYZ...)"))
         self.tg_password_2.setPlaceholderText(_translate("MainWindow", "Password (if none, leave empty)"))
@@ -493,17 +493,40 @@ def run_bot(queue_in, queue_out):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
+    client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
+
+    async def sendToMT4(data):
+        global currentList
+        for i in currentList:
+            terminal = os.path.join(i, "MQL4", "Files")
+            if os.path.exists(terminal) == True:
+                print(f'Sending {data} to {terminal}')
+                if os.path.exists(os.path.join(terminal, "lastsignal.txt")) == False:
+                    p = open(os.path.join(terminal, "lastsignal.txt"), "x")
+                with open(
+                    os.path.join(terminal, "lastsignal.txt"), "w", encoding="utf-8"
+                ) as f:
+                    f.write(data)
     
+    async def validate_client():
+        global gui_launched
+        global session_validated
+        while AppRunning:
+            await asyncio.sleep(1)
+            await client.connect()
+            if not await client.is_user_authorized():
+                if gui_launched:
+                    # if os.path.exists('user.session'):
+                    #     os.remove('user.session')
+                    ui.stackedWidget.setCurrentIndex(3)
+            session_validated = True
+            break
 
     async def set_start_page():
         while AppRunning:
             await asyncio.sleep(1)
             try:
                 global gui_launched
-                global session
-                global api_id
-                global api_hash
-                global client
                 if gui_launched:
                     print('Setting start page')
                     print('Ui launched')
@@ -512,17 +535,15 @@ def run_bot(queue_in, queue_out):
                         if not os.path.exists('session_info.txt'):
                             ui.stackedWidget.setCurrentIndex(2)
                         else:
-                            client = ui.client
-                            if client:
-                                if await client.is_user_authorized():
-                                    ui.stackedWidget.setCurrentIndex(0)
+                            if await client.is_user_authorized():
+                                ui.stackedWidget.setCurrentIndex(0)
                             else:
                                 ui.stackedWidget.setCurrentIndex(3)
-                            break
                     except Exception as e:
                         print(f'Could not set start page.{e}')
                         continue
                     
+                    break
                 else:
                     continue
             except Exception as e:
@@ -611,6 +632,7 @@ def run_bot(queue_in, queue_out):
                 print('Failed to get MQL4 paths. Error = ',e)
     
     async def update_chats():
+        start = time.time()
         while AppRunning:
             await asyncio.sleep(1)
             try:
@@ -619,9 +641,11 @@ def run_bot(queue_in, queue_out):
                 global api_id
                 global api_hash
                 global gui_launched
+                global session_validated
 
-                if not client:
+                if not session_validated:
                     continue
+
 
                 if gui_launched and ui.stackedWidget.currentIndex() == 0:
                     database_locked = False
@@ -678,49 +702,6 @@ def run_bot(queue_in, queue_out):
             except Exception as e:
                 print('Failed to terminate application. Error = ',e)
     
-    
-    
-    async def run_client():
-        while not client:
-            await asyncio.sleep(1)
-
-        while not client.is_connected():
-            await asyncio.sleep(1)
-
-        print('Client exists and is connected.')
-
-        try:
-            await client.start()
-            await client.run_until_disconnected()
-            print("Client disconnected.")
-        except asyncio.CancelledError:
-            print("Bot task was cancelled.")
-                
-        except Exception as e:
-            print("Failed to run bot. Error = ", e)
-    
-    #loop.create_task(run_client())
-    loop.run_until_complete(asyncio.gather(set_start_page(),handle_tg_code_request(),handle_tg_login(),update_chats(), update_terminals(), check_termination()))
-
-    
-async def handle_client_events():
-
-    while AppRunning and not client:
-        asyncio.sleep(1)
-
-    async def sendToMT4(data):
-        global currentList
-        for i in currentList:
-            terminal = os.path.join(i, "MQL4", "Files")
-            if os.path.exists(terminal) == True:
-                print(f'Sending {data} to {terminal}')
-                if os.path.exists(os.path.join(terminal, "lastsignal.txt")) == False:
-                    p = open(os.path.join(terminal, "lastsignal.txt"), "x")
-                with open(
-                    os.path.join(terminal, "lastsignal.txt"), "w", encoding="utf-8"
-                ) as f:
-                    f.write(data)
-
     @client.on(events.NewMessage())
     async def handler(event):
         try:
@@ -752,7 +733,7 @@ async def handle_client_events():
 
             
             if name not in allowed_chats:
-                return
+               return
 
             if event.is_reply:
                 reply = await event.get_reply_message()
@@ -774,7 +755,7 @@ async def handle_client_events():
         except Exception as e:
             print("Failed to process last message. Error = ", e)
 
-        
+    
     @client.on(events.MessageEdited)
     async def handler(event):
         try:
@@ -790,7 +771,7 @@ async def handle_client_events():
             #str(type(sender)) != "<class 'telethon.tl.types.User'>"
             
             chat_entity = await client.get_entity(event.message.peer_id)
-
+  
             if str(type(sender)) == "<class 'telethon.tl.types.User'>":
                 name = chat_entity.title if hasattr(chat_entity, 'title') else 'Unknown Group'
             else:
@@ -825,14 +806,38 @@ async def handle_client_events():
             ui.signalText.setText(msg[: msg.find("{")] + "\n\nFROM: " + name)
         except Exception as e:
             print("Failed to process last message. Error = ", e)
+    
+    async def run_client():
+        while not client:
+            await asyncio.sleep(1)
+
+        while not client.is_connected():
+            await asyncio.sleep(1)
+
+        print('Client exists and is connected.')
+
+        try:
+            await client.start()
+            await client.run_until_disconnected()
+            print("Client disconnected.")
+        except asyncio.CancelledError:
+            print("Bot task was cancelled.")
+                
+        except Exception as e:
+            print("Failed to run bot. Error = ", e)
+        
+    #loop.create_task(run_client())
+    loop.run_until_complete(asyncio.gather(set_start_page(),handle_tg_code_request(),handle_tg_login(),update_chats(), update_terminals(), validate_client(), check_termination()))
+
+    
+        
 
 
 def close_app():
     global AppRunning
     print('Closing app')
     #ui.queue_in.put('stop')
-    if client:
-        client.disconnect()
+    client.disconnect()
     #ui.logout()
     ui.timer.stop()
     AppRunning = False
@@ -843,8 +848,8 @@ queue_out = Queue()
 bot_thread = Thread(target=run_bot, args=(queue_in, queue_out))
 bot_thread.start()
 
-client_thread = Thread(target=asyncio.run, args=(handle_client_events,))
-client_thread.start()
+# client_thread = Thread(target=run_client, args=(client,))
+# client_thread.start()
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
