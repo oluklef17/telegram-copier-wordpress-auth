@@ -23,7 +23,7 @@ AppRunning = True
 
 gui_launched = False
 
-client = None
+client = {'on' : 'Message'}
 phone = None
 phone_code_hash = None
 session = "user"
@@ -208,7 +208,7 @@ class Ui_MainWindow(object):
         self.statusbar.setObjectName("statusbar")
         MainWindow.setStatusBar(self.statusbar)
 
-        
+        self.client = None
         self.session_info = None
         self.initSessionRefreshTimer()
 
@@ -278,7 +278,9 @@ class Ui_MainWindow(object):
                 self.timer.start(twelve_days_in_milliseconds)
 
             self.queue_in.put('start')
+
             if os.path.exists('user.session'):
+                self.client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
                 self.stackedWidget.setCurrentIndex(0)
             else:
                 self.stackedWidget.setCurrentIndex(3)
@@ -491,39 +493,7 @@ def run_bot(queue_in, queue_out):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    if not client:
-        try:
-            sess = session if os.path.exists('user.session') else 'empty'
-            client = TelegramClient(session=sess, api_id=api_id, api_hash=api_hash)
-        except Exception as e:
-            print(f'Could not initialize client. Reason: {e}')
-
-    async def initClient():
-        global client
-        client = TelegramClient(session=sess, api_id=api_id, api_hash=api_hash)
     
-    async def check_client():
-        while AppRunning:
-            await asyncio.sleep(1)
-
-            if not gui_launched:
-                continue
-
-            
-            await initClient()
-
-    async def sendToMT4(data):
-        global currentList
-        for i in currentList:
-            terminal = os.path.join(i, "MQL4", "Files")
-            if os.path.exists(terminal) == True:
-                print(f'Sending {data} to {terminal}')
-                if os.path.exists(os.path.join(terminal, "lastsignal.txt")) == False:
-                    p = open(os.path.join(terminal, "lastsignal.txt"), "x")
-                with open(
-                    os.path.join(terminal, "lastsignal.txt"), "w", encoding="utf-8"
-                ) as f:
-                    f.write(data)
 
     async def set_start_page():
         while AppRunning:
@@ -542,22 +512,17 @@ def run_bot(queue_in, queue_out):
                         if not os.path.exists('session_info.txt'):
                             ui.stackedWidget.setCurrentIndex(2)
                         else:
-                            if not client:
-                                if os.path.exists('user.session'):
-                                    client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
-                                    ui.stackedWidget.setCurrentIndex(0)
-                                else:
-                                    ui.stackedWidget.setCurrentIndex(3)
-                            else:
+                            client = ui.client
+                            if client:
                                 if await client.is_user_authorized():
                                     ui.stackedWidget.setCurrentIndex(0)
-                                else:
-                                    ui.stackedWidget.setCurrentIndex(3)
+                            else:
+                                ui.stackedWidget.setCurrentIndex(3)
+                            break
                     except Exception as e:
                         print(f'Could not set start page.{e}')
                         continue
                     
-                    break
                 else:
                     continue
             except Exception as e:
@@ -608,7 +573,6 @@ def run_bot(queue_in, queue_out):
 
                     if client.is_user_authorized:
                         ui.stackedWidget.setCurrentIndex(0)
-                        await initClient()
                         break
                     else:
                         continue
@@ -714,6 +678,49 @@ def run_bot(queue_in, queue_out):
             except Exception as e:
                 print('Failed to terminate application. Error = ',e)
     
+    
+    
+    async def run_client():
+        while not client:
+            await asyncio.sleep(1)
+
+        while not client.is_connected():
+            await asyncio.sleep(1)
+
+        print('Client exists and is connected.')
+
+        try:
+            await client.start()
+            await client.run_until_disconnected()
+            print("Client disconnected.")
+        except asyncio.CancelledError:
+            print("Bot task was cancelled.")
+                
+        except Exception as e:
+            print("Failed to run bot. Error = ", e)
+    
+    #loop.create_task(run_client())
+    loop.run_until_complete(asyncio.gather(set_start_page(),handle_tg_code_request(),handle_tg_login(),update_chats(), update_terminals(), check_termination()))
+
+    
+async def handle_client_events():
+
+    while AppRunning and not client:
+        asyncio.sleep(1)
+
+    async def sendToMT4(data):
+        global currentList
+        for i in currentList:
+            terminal = os.path.join(i, "MQL4", "Files")
+            if os.path.exists(terminal) == True:
+                print(f'Sending {data} to {terminal}')
+                if os.path.exists(os.path.join(terminal, "lastsignal.txt")) == False:
+                    p = open(os.path.join(terminal, "lastsignal.txt"), "x")
+                with open(
+                    os.path.join(terminal, "lastsignal.txt"), "w", encoding="utf-8"
+                ) as f:
+                    f.write(data)
+
     @client.on(events.NewMessage())
     async def handler(event):
         try:
@@ -818,31 +825,6 @@ def run_bot(queue_in, queue_out):
             ui.signalText.setText(msg[: msg.find("{")] + "\n\nFROM: " + name)
         except Exception as e:
             print("Failed to process last message. Error = ", e)
-    
-    async def run_client():
-        while not client:
-            await asyncio.sleep(1)
-
-        while not client.is_connected():
-            await asyncio.sleep(1)
-
-        print('Client exists and is connected.')
-
-        try:
-            await client.start()
-            await client.run_until_disconnected()
-            print("Client disconnected.")
-        except asyncio.CancelledError:
-            print("Bot task was cancelled.")
-                
-        except Exception as e:
-            print("Failed to run bot. Error = ", e)
-    
-    #loop.create_task(run_client())
-    loop.run_until_complete(asyncio.gather(set_start_page(),handle_tg_code_request(),handle_tg_login(),update_chats(), update_terminals(), check_termination()))
-
-    
-        
 
 
 def close_app():
@@ -861,8 +843,8 @@ queue_out = Queue()
 bot_thread = Thread(target=run_bot, args=(queue_in, queue_out))
 bot_thread.start()
 
-# client_thread = Thread(target=run_client, args=(client,))
-# client_thread.start()
+client_thread = Thread(target=asyncio.run, args=(handle_client_events,))
+client_thread.start()
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
