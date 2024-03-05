@@ -23,6 +23,7 @@ import time
 AppRunning = True
 
 gui_launched = False
+
 session_validated = False
 
 client = None
@@ -40,7 +41,16 @@ class Ui_MainWindow(object):
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(1213, 600)
         MainWindow.setFixedWidth(1213)
-        MainWindow.setStyleSheet("background-color:gray;")
+        #MainWindow.setStyleSheet("background-color: black;")
+
+        MainWindow.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        
+
+        #Font
+        self.font = QtGui.QFont()
+        self.font.setFamily("Social Media Circled")
+        #font.setPointSize(15)
+
         self.AppRunning = True
         self.queue_in = queue_in
         self.queue_out = queue_out
@@ -60,12 +70,13 @@ class Ui_MainWindow(object):
         self.authWarning.setObjectName("authWarning")
         self.config_label = QtWidgets.QLabel(parent=self.page)
         self.config_label.setGeometry(QtCore.QRect(91, 170, 281, 20))
-        self.config_label.setStyleSheet("font-size:15px")
+        self.config_label.setStyleSheet("color: white")
         self.config_label.setObjectName("config_label")
         self.config_label_2 = QtWidgets.QLabel(parent=self.page)
         self.config_label_2.setGeometry(QtCore.QRect(821, 170, 281, 16))
         self.config_label_2.setStyleSheet("font-size:15px")
         self.config_label_2.setObjectName("config_label_2")
+        self.config_label_2.setStyleSheet("color: white")
         self.signalText = QtWidgets.QLabel(parent=self.page)
         self.signalText.setGeometry(QtCore.QRect(425, 200, 351, 261))
         self.signalText.setStyleSheet("background-color: qlineargradient(spread:pad, x1:0, y1:0.505682, x2:1, y2:0.477, stop:0 rgba(20, 47, 78, 219), stop:1 rgba(85, 98, 112, 226));color:rgba(255, 255, 255, 210);border-radius:5px;")
@@ -111,6 +122,7 @@ class Ui_MainWindow(object):
         self.signalLabel.setGeometry(QtCore.QRect(425, 170, 281, 16))
         self.signalLabel.setStyleSheet("font-size:15px")
         self.signalLabel.setObjectName("signalLabel")
+        self.signalLabel.setStyleSheet("color: white")
         self.chatListLabel = QtWidgets.QLabel(parent=self.page)
         self.chatListLabel.setGeometry(QtCore.QRect(820, 310, 281, 16))
         self.chatListLabel.setStyleSheet("font-size:15px")
@@ -132,11 +144,12 @@ class Ui_MainWindow(object):
         self.label.setGeometry(QtCore.QRect(91, 230, 291, 71))
         self.label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.label.setObjectName("label")
+        self.label.setStyleSheet("color: white")
         self.stackedWidget.addWidget(self.page_3)
         self.page_2 = QtWidgets.QWidget()
         self.page_2.setObjectName("page_2")
         self.layoutWidget = QtWidgets.QWidget(parent=self.page_2)
-        self.layoutWidget.setGeometry(QtCore.QRect(660, 130, 181, 251))
+        self.layoutWidget.setGeometry(QtCore.QRect(491, 130, 181, 251))
         self.layoutWidget.setObjectName("layoutWidget")
         self.verticalLayout = QtWidgets.QVBoxLayout(self.layoutWidget)
         self.verticalLayout.setContentsMargins(0, 0, 0, 0)
@@ -204,14 +217,14 @@ class Ui_MainWindow(object):
         self.tg_login_2.setObjectName("tg_login_2")
         self.verticalLayout_5.addWidget(self.tg_login_2)
         self.stackedWidget.addWidget(self.page_6)
-        MainWindow.setCentralWidget(self.centralwidget)
+        #MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtWidgets.QMenuBar(parent=MainWindow)
         self.menubar.setGeometry(QtCore.QRect(0, 0, 1312, 22))
         self.menubar.setObjectName("menubar")
-        MainWindow.setMenuBar(self.menubar)
+        #MainWindow.setMenuBar(self.menubar)
         self.statusbar = QtWidgets.QStatusBar(parent=MainWindow)
         self.statusbar.setObjectName("statusbar")
-        MainWindow.setStatusBar(self.statusbar)
+        #MainWindow.setStatusBar(self.statusbar)
 
         
         self.session_info = None
@@ -219,6 +232,7 @@ class Ui_MainWindow(object):
 
         #Auto login if client did not log out on previous session
         self.login_if_return()
+        self.set_font()
 
 
         #Connect functions to corresponding buttons
@@ -232,6 +246,13 @@ class Ui_MainWindow(object):
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
         self.retranslateUi(MainWindow)
+
+    def set_font(self):
+        for child_widget in self.stackedWidget.findChildren(QtWidgets.QWidget):
+            try:
+                child_widget.setFont(self.font)
+            except Exception as e:
+                print(f"Could not set font. Reason: {e}")
     
     def show_popup(self, title, text, mode=0):
         try:
@@ -470,7 +491,7 @@ class Ui_MainWindow(object):
         MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
         self.config_label.setText(_translate("MainWindow", "CONFIGURE TERMINALS"))
         self.config_label_2.setText(_translate("MainWindow", "CONFIGURE CHATS"))
-        self.signalText.setText(_translate("MainWindow", "Message"))
+        self.signalText.setText(_translate("MainWindow", ""))
         self.server_logout.setText(_translate("MainWindow", "LOGOUT"))
         self.terminalListLabel.setText(_translate("MainWindow", "Terminal list"))
         self.terminalButton.setText(_translate("MainWindow", "Add Terminal"))
@@ -869,7 +890,7 @@ bot_thread.start()
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
     app.aboutToQuit.connect(lambda: close_app())
-    MainWindow = QtWidgets.QMainWindow()
+    MainWindow = QtWidgets.QWidget()
     ui = Ui_MainWindow()
     ui.setupUi(MainWindow, queue_in, queue_out)
     queue_in.put('ui launched')
