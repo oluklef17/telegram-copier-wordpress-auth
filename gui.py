@@ -41,8 +41,9 @@ class Ui_MainWindow(object):
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(1213, 600)
         MainWindow.setFixedWidth(1213)
-        #MainWindow.setStyleSheet("background-color: black;")
+        MainWindow.setStyleSheet("background-color: rgba(39, 39, 39, 0.2);")
 
+        MainWindow.setWindowFlags(QtCore.Qt.WindowType.FramelessWindowHint)
         MainWindow.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
         
 
@@ -60,17 +61,21 @@ class Ui_MainWindow(object):
         self.stackedWidget = QtWidgets.QStackedWidget(parent=self.centralwidget)
         self.stackedWidget.setGeometry(QtCore.QRect(9, 9, 1211, 591))
         self.stackedWidget.setObjectName("stackedWidget")
+
+        self.stackedWidget.setWindowFlags(QtCore.Qt.WindowType.FramelessWindowHint)
+        self.stackedWidget.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        
         self.page = QtWidgets.QWidget()
         self.page.setObjectName("page")
         self.authWarning = QtWidgets.QLabel(parent=self.page)
-        self.authWarning.setGeometry(QtCore.QRect(350, 50, 631, 61))
-        self.authWarning.setStyleSheet("font:bold;color:#8B0000")
+        self.authWarning.setGeometry(QtCore.QRect(280, 60, 631, 61))
+        self.authWarning.setStyleSheet("font:bold;color:lime")
         self.authWarning.setText("")
         self.authWarning.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter|QtCore.Qt.AlignmentFlag.AlignTop)
         self.authWarning.setObjectName("authWarning")
         self.config_label = QtWidgets.QLabel(parent=self.page)
         self.config_label.setGeometry(QtCore.QRect(91, 170, 281, 20))
-        self.config_label.setStyleSheet("color: white")
+        self.config_label.setStyleSheet("color: white; background-color: rgba(39, 39, 39, 0.2);")
         self.config_label.setObjectName("config_label")
         self.config_label_2 = QtWidgets.QLabel(parent=self.page)
         self.config_label_2.setGeometry(QtCore.QRect(821, 170, 281, 16))
@@ -144,7 +149,7 @@ class Ui_MainWindow(object):
         self.label.setGeometry(QtCore.QRect(91, 230, 291, 71))
         self.label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.label.setObjectName("label")
-        self.label.setStyleSheet("color: white")
+        self.label.setStyleSheet("color: white; background-color:none")
         self.stackedWidget.addWidget(self.page_3)
         self.page_2 = QtWidgets.QWidget()
         self.page_2.setObjectName("page_2")
@@ -233,6 +238,7 @@ class Ui_MainWindow(object):
         #Auto login if client did not log out on previous session
         self.login_if_return()
         self.set_font()
+        self.set_transparency()
 
 
         #Connect functions to corresponding buttons
@@ -253,6 +259,15 @@ class Ui_MainWindow(object):
                 child_widget.setFont(self.font)
             except Exception as e:
                 print(f"Could not set font. Reason: {e}")
+    
+    def set_transparency(self):
+        for child_widget in self.stackedWidget.findChildren(QtWidgets.QWidget):
+            try:
+                if isinstance(child_widget, QtWidgets.QLabel) and child_widget.objectName() != "signalText":
+                    child_widget.setWindowFlags(QtCore.Qt.WindowType.FramelessWindowHint)
+                    child_widget.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            except Exception as e:
+                print(f"Could not set transparency. Reason: {e}")
     
     def show_popup(self, title, text, mode=0):
         try:
@@ -283,6 +298,7 @@ class Ui_MainWindow(object):
                 self.initialize_ui(session_info)
             else:
                 print('User logged out on last close.')
+                self.stackedWidget.setCurrentIndex(2)
         except Exception as e:
             self.show_popup('Auto login failed', f'Failed to execute auto login. Reason: {e}. Please close application and relaunch.', 2)
             
@@ -309,6 +325,9 @@ class Ui_MainWindow(object):
                 self.stackedWidget.setCurrentIndex(0)
             else:
                 self.stackedWidget.setCurrentIndex(3)
+            
+            self.authWarning.setText(f"Logged in with session ID: {session_info['session_id']}")
+            self.authWarning.setStyleSheet("font:bold;color:lime")
         except Exception as e:
             self.show_popup('UI initialization failed', f'Could not initialize UI. Reason: {e}. Please relaunch application', 1)
     
@@ -325,8 +344,6 @@ class Ui_MainWindow(object):
                 session_info = response.json()
                 self.show_popup('Login Successful', "You are now logged in.", 1)
                 self.AppRunning = True
-                self.authWarning.setText(f"Logged in with session ID: {session_info['session_id']}")
-                self.authWarning.setStyleSheet("font:bold;color:green")
                 self.save_session_info(session_info)
                 self.initialize_ui(session_info)
 
