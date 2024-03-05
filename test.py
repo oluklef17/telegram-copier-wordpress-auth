@@ -1,26 +1,6 @@
-from telethon import TelegramClient, events, utils
-import os
-import asyncio
+import subprocess
 
-session = "user"
-api_id = int(os.environ.get("TG_API_ID"))
-api_hash = os.environ.get('TG_API_HASH')
+command = "your_command_here"
+input_data = "your_input_here"
 
-# loop = asyncio.new_event_loop()
-# asyncio.set_event_loop(loop)
-
-# async def run():
-#     client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
-#     await client.connect()
-#     await client.start()
-#     if await client.is_user_authorized():
-#         print('Logged in')
-#     else:
-#         print('Not logged in')
-
-# loop.run_until_complete(run())
-
-client = TelegramClient('', api_id=None, api_hash='')
-
-print(client)
-
+subprocess.run(command, input=input_data.encode(), text=True)

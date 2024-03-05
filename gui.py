@@ -280,6 +280,7 @@ class Ui_MainWindow(object):
                 self.timer.start(twelve_days_in_milliseconds)
 
             self.queue_in.put('start')
+
             if os.path.exists('user.session'):
                 self.stackedWidget.setCurrentIndex(0)
             else:
@@ -519,6 +520,9 @@ def run_bot(queue_in, queue_out):
                     # if os.path.exists('user.session'):
                     #     os.remove('user.session')
                     ui.stackedWidget.setCurrentIndex(3)
+            else:
+                ui.stackedWidget.setCurrentIndex(0)
+                print('Session is valid')
             session_validated = True
             break
 
@@ -527,6 +531,11 @@ def run_bot(queue_in, queue_out):
             await asyncio.sleep(1)
             try:
                 global gui_launched
+                global session_validated
+
+                if not session_validated:
+                    continue
+
                 if gui_launched:
                     print('Setting start page')
                     print('Ui launched')
@@ -566,7 +575,7 @@ def run_bot(queue_in, queue_out):
                     else:
                         print('Invalid phone format. Must be +XXX...')
                     
-                    client = TelegramClient('user', api_id=api_id, api_hash=api_hash)
+                    #client = TelegramClient('user', api_id=api_id, api_hash=api_hash)
                     await client.connect()
 
                     if not await client.get_me():
@@ -590,6 +599,8 @@ def run_bot(queue_in, queue_out):
                 global phone
                 if not queue_in.empty() and queue_in.get() == 'login to tg':
                     code = ui.tg_code_2.text()
+                    print('Attempting telegram sign in')
+                    print('Phone number on sign in: ',phone)
                     await client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
 
                     if client.is_user_authorized:
@@ -641,11 +652,7 @@ def run_bot(queue_in, queue_out):
                 global api_id
                 global api_hash
                 global gui_launched
-                global session_validated
-
-                if not session_validated:
-                    continue
-
+                
 
                 if gui_launched and ui.stackedWidget.currentIndex() == 0:
                     database_locked = False
@@ -682,11 +689,14 @@ def run_bot(queue_in, queue_out):
                     continue
             except Exception as e:
                 print('Failed to load chats. Error = ',e)
-                continue
+                ui.stackedWidget.setCurrentIndex(3)
+                
     
     async def check_termination():
         while AppRunning:
             await asyncio.sleep(1)
+
+           
             try:
                 if not queue_in.empty() and queue_in.get() == 'stop':
                     print('Stopping app.')
@@ -808,12 +818,14 @@ def run_bot(queue_in, queue_out):
             print("Failed to process last message. Error = ", e)
     
     async def run_client():
+        global session_validated
+
         while not client:
             await asyncio.sleep(1)
 
         while not client.is_connected():
             await asyncio.sleep(1)
-
+       
         print('Client exists and is connected.')
 
         try:
@@ -827,7 +839,7 @@ def run_bot(queue_in, queue_out):
             print("Failed to run bot. Error = ", e)
         
     #loop.create_task(run_client())
-    loop.run_until_complete(asyncio.gather(set_start_page(),handle_tg_code_request(),handle_tg_login(),update_chats(), update_terminals(), validate_client(), check_termination()))
+    loop.run_until_complete(asyncio.gather(update_chats(), update_terminals(), check_termination()))
 
     
         
@@ -837,7 +849,7 @@ def close_app():
     global AppRunning
     print('Closing app')
     #ui.queue_in.put('stop')
-    client.disconnect()
+    
     #ui.logout()
     ui.timer.stop()
     AppRunning = False
