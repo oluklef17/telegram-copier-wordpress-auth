@@ -24,7 +24,7 @@ AppRunning = True
 
 gui_launched = False
 
-session_validated = False
+telegram_connected = False
 
 client = None
 phone = None
@@ -247,11 +247,12 @@ class Ui_MainWindow(object):
 
         #Connect functions to corresponding buttons
         self.backend_login.clicked.connect(self.handle_backend_login)
-        self.tg_code_request_2.clicked.connect(self.handle_tg_code_request)
-        self.tg_login_2.clicked.connect(self.handle_tg_login)
         self.chatButton.clicked.connect(self.add_chats)
         self.server_logout.clicked.connect(self.logout)
         self.terminalButton.clicked.connect(self.updateTerminalList)
+
+        self.tg_code_request_2.clicked.connect(self.request_tg_code)
+        self.tg_login_2.clicked.connect(self.request_tg_login)
 
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
@@ -272,6 +273,14 @@ class Ui_MainWindow(object):
                     child_widget.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
             except Exception as e:
                 print(f"Could not set transparency. Reason: {e}")
+    
+    def request_tg_code(self):
+        self.queue_in.put('code requested')
+        print('Telegram code request button clicked')
+    
+    def request_tg_login(self):
+        self.queue_in.put('login requested')
+        print('Telegram login button clicked')
     
     def show_popup(self, title, text, mode=0):
         try:
@@ -327,11 +336,14 @@ class Ui_MainWindow(object):
 
             if os.path.exists('user.session'):
                 self.stackedWidget.setCurrentIndex(0)
+                self.authWarning.setText(f"Logged in with session ID: {session_info['session_id']}")
+                self.authWarning.setStyleSheet("font:bold;color:lime")
             else:
+                self.authWarning.setText('You have not connected a Telegram account')
+                self.authWarning.setStyleSheet('color:red;')
                 self.stackedWidget.setCurrentIndex(3)
             
-            self.authWarning.setText(f"Logged in with session ID: {session_info['session_id']}")
-            self.authWarning.setStyleSheet("font:bold;color:lime")
+            
         except Exception as e:
             self.show_popup('UI initialization failed', f'Could not initialize UI. Reason: {e}. Please relaunch application', 1)
     
@@ -462,18 +474,6 @@ class Ui_MainWindow(object):
         except Exception as e:
             self.show_popup('Session refresh failed', 'Could not refresh session. Reason: {e}')
     
-    def handle_tg_code_request(self):
-        try:
-            self.queue_in.put('get tg code')
-            self.show_popup('Code request sent', 'Telegram code request sent', 1)
-        except Exception as e:
-            self.show_popup(f'Code request queue failed', 'Could not queue telegram code request. Reason: {e}')
-    
-    def handle_tg_login(self):
-        try:
-            self.queue_in.put('login to tg')
-        except Exception as e:
-            self.show_popup(f'Login request queue failed', 'Could not queue telegram login request. Reason: {e}')
     
     def add_chats(self):
         try:
@@ -535,358 +535,340 @@ class Ui_MainWindow(object):
 
 def run_bot(queue_in, queue_out):
     global client
+    global phone
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-    client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
+                
+        async def login_to_telegram():
+            global telegram_connected
+            global phone
+            global phone_code_hash
+            global client
+            global gui_launched
 
-    async def sendToMT4(data):
-        global currentList
-        for i in currentList:
-            terminal = os.path.join(i, "MQL4", "Files")
-            if os.path.exists(terminal) == True:
-                print(f'Sending {data} to {terminal}')
-                if os.path.exists(os.path.join(terminal, "lastsignal.txt")) == False:
-                    p = open(os.path.join(terminal, "lastsignal.txt"), "x")
-                with open(
-                    os.path.join(terminal, "lastsignal.txt"), "w", encoding="utf-8"
-                ) as f:
-                    f.write(data)
-    
-    async def validate_client():
-        global gui_launched
-        global session_validated
-        while AppRunning:
-            await asyncio.sleep(1)
-            await client.connect()
-            if not await client.is_user_authorized():
-                if gui_launched:
-                    # if os.path.exists('user.session'):
-                    #     os.remove('user.session')
-                    ui.stackedWidget.setCurrentIndex(3)
-            else:
-                ui.stackedWidget.setCurrentIndex(0)
-                print('Session is valid')
-            session_validated = True
-            break
-
-    async def set_start_page():
-        while AppRunning:
-            await asyncio.sleep(1)
-            try:
-                global gui_launched
-                global session_validated
-
-                if not session_validated:
-                    continue
-
-                if gui_launched:
-                    print('Setting start page')
-                    print('Ui launched')
-
-                    try:
-                        if not os.path.exists('session_info.txt'):
-                            ui.stackedWidget.setCurrentIndex(2)
-                        else:
-                            if await client.is_user_authorized():
-                                ui.stackedWidget.setCurrentIndex(0)
-                            else:
-                                ui.stackedWidget.setCurrentIndex(3)
-                    except Exception as e:
-                        print(f'Could not set start page.{e}')
-                        continue
-                    
-                    break
-                else:
-                    continue
-            except Exception as e:
-                print('Failed to set start page: ', e)
-                continue
-    
-    async def handle_tg_code_request():
-        while AppRunning:
-            await asyncio.sleep(1)
-            try:
-                global phone_code_hash
-                global client
-                global phone
-                if not queue_in.empty() and queue_in.get() == 'get tg code':   
-                    phone = ui.tg_phone_2.text()
-                    password = ui.tg_password_2.text()
-                    pattern = r'\+\d+'
-                    if re.search(pattern=pattern, string=phone):
-                        print('Phone number is: ',phone)
-                    else:
-                        print('Invalid phone format. Must be +XXX...')
-                    
-                    #client = TelegramClient('user', api_id=api_id, api_hash=api_hash)
+            while AppRunning:
+                if client and phone_code_hash == '':
                     await client.connect()
-
-                    if not await client.get_me():
-                        result = await client.send_code_request(phone)
-                        phone_code_hash = result.phone_code_hash
-                        break
-                    else:
-                        continue
+                    if await client.get_me():
+                        telegram_connected = True
                 else:
-                    continue
-            except Exception as e:
-                print('TG login failed. Error = ',e)
-                continue
-    
-    async def handle_tg_login():
-        while AppRunning:
-            await asyncio.sleep(1)
-            try:
-                global phone_code_hash
-                global client
-                global phone
-                if not queue_in.empty() and queue_in.get() == 'login to tg':
-                    code = ui.tg_code_2.text()
-                    print('Attempting telegram sign in')
-                    print('Phone number on sign in: ',phone)
-                    await client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
-
-                    if client.is_user_authorized:
-                        ui.stackedWidget.setCurrentIndex(0)
-                        break
-                    else:
+                    #print('Working')
+                    if not gui_launched:
                         continue
-                else:
-                    continue
-            
-            except Exception as e:
-                print('Failed to login to telegram. Error = ',e)
-                continue
-    
-    async def update_terminals():
-        global MQL4_paths
-        home = os.path.expanduser('~')
-        starting_directory = os.path.join(home, 'AppData','Roaming','MetaQuotes','Terminal')
-        while len(MQL4_paths) == 0:
-            await asyncio.sleep(1)
-            try:
-                current_directory = os.path.abspath(starting_directory)
-                while current_directory != os.path.dirname(current_directory):
-                    current_directory = os.path.dirname(current_directory)
-                for root, dirs, files in os.walk(starting_directory):
-                    for dir in dirs:
-                        path = os.path.join(root, dir)
-                        #log('Path: ',path)
-                        if path.endswith("MQL4") and 'MQL4' not in root:
-                            path = path.replace('MQL4', '')
-                            path = path.replace(starting_directory, '')
-                            path = path.replace('\\', '')
-                            MQL4_paths.append(path)
-                if len(MQL4_paths) > 0:
-                    #ui.terminalEdit.clear()
-                    for p in MQL4_paths:
-                        ui.terminalEdit.addItem(p)
-                    break
-            except Exception as e:
-                print('Failed to get MQL4 paths. Error = ',e)
-    
-    async def update_chats():
-        start = time.time()
-        while AppRunning:
-            await asyncio.sleep(1)
-            try:
-                global client
-                global session
-                global api_id
-                global api_hash
-                global gui_launched
-                
+                    if not queue_in.empty():
+                        message = queue_in.get()
+                        print(f'New queue message: {message}')
 
-                if gui_launched and ui.stackedWidget.currentIndex() == 0:
-                    database_locked = False
+                        async def process_code_request():
+                            global phone, client, phone_code_hash
+                            phone = ui.tg_phone_2.text()
+                            print('Phone is ', phone, '. Attempting client login.')
 
-                    try:
-                       async with client:
-                            pass
-                    except sqlite3.OperationalError as e:
-                        print('Database is locked. Will re-attempt chats update')
-                        database_locked = True
-                    
-                    if database_locked:
-                        continue
-                    
-                    try:
-                     await client.connect()
-                    except Exception as e:
-                     print('Could not connect client. Error = ',e)
-                     continue
-                   
-                    if await client.is_user_authorized():
-                        async for dialog in client.iter_dialogs():
-                            if not dialog.is_user:
-                                ui.chatSelect.addItem(dialog.title)
-                        #client.disconnect()
-                        await run_client()
-                        break
+                            pattern = r'\+\d+'
 
-                    else:
-                        print('Not logged in')
-                        continue
-                    
-                else:
-                    continue
-            except Exception as e:
-                print('Failed to load chats. Error = ',e)
-                ui.stackedWidget.setCurrentIndex(3)
-                
-    
-    async def check_termination():
-        while AppRunning:
-            await asyncio.sleep(1)
+                            if not re.search(pattern=pattern, string=phone):
+                                print('Phone number is invalid. Please enter again.')
+                                return
+                            
+                            client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
 
-           
-            try:
-                if not queue_in.empty() and queue_in.get() == 'stop':
-                    print('Stopping app.')
-                    if client:
-                        print('Disconnecting client.')
-                        await client.disconnect()
-                    close_app()
-                elif not queue_in.empty() and queue_in.get() == 'start':
-                    print('Starting app')
-                    #AppRunning = True
-                else:
-                    continue
-            except Exception as e:
-                print('Failed to terminate application. Error = ',e)
-    
-    @client.on(events.NewMessage())
-    async def handler(event):
-        try:
-            if not ui:
-                return
-            
-            if not ui.AppRunning:
-                return
-            
-            #log('New message received.')
-            sender = await event.get_sender()
+                            await client.connect()
+                            result = await client.send_code_request(phone)
+                            phone_code_hash = result.phone_code_hash
 
-            #str(type(sender)) != "<class 'telethon.tl.types.User'>"
-            
-            chat_entity = await client.get_entity(event.message.peer_id)
+                        async def process_login_request():
+                            global phone, client, phone_code_hash, telegram_connected
+                            code = ui.tg_code_2.text()
+                            print('Code is ', code, '. Attempting client login.')
 
-            if str(type(sender)) == "<class 'telethon.tl.types.User'>":
-                name = chat_entity.title if hasattr(chat_entity, 'title') else 'Unknown Group'
-            else:
-                name = utils.get_display_name(sender)
-            #print('Group name is ',group_name)
-            #print('Sender type ',str(type(sender)))
-            msg = ""
+                            if len(code) < 5:
+                                print('Please enter correct code sent by Telegram')
+                                return
 
-            allowed_chats = list()
+                            await client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
 
-            for i in range(ui.chatList.count()):
-                allowed_chats.append(ui.chatList.item(i).text())
+                            
 
-            
-            if name not in allowed_chats:
-               return
+                            if await client.is_user_authorized():
+                                print('Successfully logged in to the client.')
+                                ui.stackedWidget.setCurrentIndex(0)
+                                phone_code_hash = ''
+                                telegram_connected = True
+                            else:
+                                print('Client not logged in.')
 
-            if event.is_reply:
-                reply = await event.get_reply_message()
-                msg = reply.raw_text
-                msg = msg.replace("|", "")
-                msg = msg.replace("{", "")
-                msg = msg.replace("}", "")
-                msg = msg + "|" + event.raw_text + " {" + str(reply.id) + "}"
-            else:
-                msg = event.raw_text
-                msg = msg.replace("|", "")
-                msg = msg.replace("{", "")
-                msg = msg.replace("}", "")
-                msg = msg  + " {" + str(event.id) + "}"
-            print('Message: ',msg)
-            await sendToMT4(f'CH{allowed_chats.index(name) + 1}: {name}' + "\n" + msg)
-            MSG = msg.upper()
-            ui.signalText.setText(msg[: msg.find("{")] + "\n\nFROM: " + name)
-        except Exception as e:
-            print("Failed to process last message. Error = ", e)
+                        try:
+                            if message == 'code requested':
+                                await process_code_request()
+                            elif message == 'login requested':
+                                await process_login_request()
+                            else:
+                                print(f'Unknown message: {message}')
+                        except Exception as e:
+                            print(f'Error processing message: {e}')
 
-    
-    @client.on(events.MessageEdited)
-    async def handler(event):
-        try:
-            if not ui:
-                return
-            
-            if not ui.AppRunning:
-                return
-            
-            #log('New message received.')
-            sender = await event.get_sender()
 
-            #str(type(sender)) != "<class 'telethon.tl.types.User'>"
-            
-            chat_entity = await client.get_entity(event.message.peer_id)
-  
-            if str(type(sender)) == "<class 'telethon.tl.types.User'>":
-                name = chat_entity.title if hasattr(chat_entity, 'title') else 'Unknown Group'
-            else:
-                name = utils.get_display_name(sender)
-            #print('Group name is ',group_name)
-            #print('Sender type ',str(type(sender)))
-            msg = ""
+        if os.path.exists(f'{session}.session'):
+            client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
+        else:
+            task = loop.create_task(login_to_telegram())
+            loop.run_until_complete(task)
 
-            allowed_chats = list()
-
-            for i in range(ui.chatList.count()):
-                allowed_chats.append(ui.chatList.item(i).text())
-
-            if name not in allowed_chats:
-                return
-
-            if event.is_reply:
-                reply = await event.get_reply_message()
-                msg = reply.raw_text
-                msg = msg.replace("|", "")
-                msg = msg.replace("{", "")
-                msg = msg.replace("}", "")
-                msg = msg + "|" + event.raw_text + " {" + str(reply.id) + "}"
-            else:
-                msg = event.raw_text
-                msg = msg.replace("|", "")
-                msg = msg.replace("{", "")
-                msg = msg.replace("}", "")
-                msg = msg  + " {" + str(event.id) + "}"
-            await sendToMT4(f'CH{allowed_chats.index(name) + 1}: {name}' + "\n" + msg + '\n\nEdited')
-            MSG = msg.upper()
-            ui.signalText.setText(msg[: msg.find("{")] + "\n\nFROM: " + name)
-        except Exception as e:
-            print("Failed to process last message. Error = ", e)
-    
-    async def run_client():
-        global session_validated
-
-        while not client:
-            await asyncio.sleep(1)
-
-        while not client.is_connected():
-            await asyncio.sleep(1)
-       
-        print('Client exists and is connected.')
-
-        try:
-            await client.start()
-            await client.run_until_disconnected()
-            print("Client disconnected.")
-        except asyncio.CancelledError:
-            print("Bot task was cancelled.")
-                
-        except Exception as e:
-            print("Failed to run bot. Error = ", e)
+        async def sendToMT4(data):
+            global currentList
+            for i in currentList:
+                terminal = os.path.join(i, "MQL4", "Files")
+                if os.path.exists(terminal) == True:
+                    print(f'Sending {data} to {terminal}')
+                    if os.path.exists(os.path.join(terminal, "lastsignal.txt")) == False:
+                        p = open(os.path.join(terminal, "lastsignal.txt"), "x")
+                    with open(
+                        os.path.join(terminal, "lastsignal.txt"), "w", encoding="utf-8"
+                    ) as f:
+                        f.write(data)
         
-    #loop.create_task(run_client())
-    loop.run_until_complete(asyncio.gather(update_chats(), update_terminals(), check_termination()))
+        
+        async def update_terminals():
+            global MQL4_paths
+            home = os.path.expanduser('~')
+            starting_directory = os.path.join(home, 'AppData','Roaming','MetaQuotes','Terminal')
+            while len(MQL4_paths) == 0:
+                await asyncio.sleep(1)
+                try:
+                    current_directory = os.path.abspath(starting_directory)
+                    while current_directory != os.path.dirname(current_directory):
+                        current_directory = os.path.dirname(current_directory)
+                    for root, dirs, files in os.walk(starting_directory):
+                        for dir in dirs:
+                            path = os.path.join(root, dir)
+                            
+                            if path.endswith("MQL4") and 'MQL4' not in root:
+                                path = path.replace('MQL4', '')
+                                path = path.replace(starting_directory, '')
+                                path = path.replace('\\', '')
+                                MQL4_paths.append(path)
+                    if len(MQL4_paths) > 0:
+                        #ui.terminalEdit.clear()
+                        for p in MQL4_paths:
+                            ui.terminalEdit.addItem(p)
+                        break
+                except Exception as e:
+                    print('Failed to get MQL4 paths. Error = ',e)
+        
+        async def update_chats():
+            start = time.time()
+            while AppRunning:
+                await asyncio.sleep(1)
+                try:
+                    global client
+                    global session
+                    global api_id
+                    global api_hash
+                    global gui_launched
 
+                    if not telegram_connected:
+                        continue
+                    
+
+                    if gui_launched and ui.stackedWidget.currentIndex() == 0:
+                        database_locked = False
+
+                        try:
+                            async with client:
+                                    pass
+                        except sqlite3.OperationalError as e:
+                            print('Database is locked. Will re-attempt chats update')
+                            database_locked = True
+                        
+                        if database_locked:
+                            continue
+                        
+                        try:
+                            await client.connect()
+                        except Exception as e:
+                            print('Could not connect client. Error = ',e)
+                            continue
+                    
+                        if await client.is_user_authorized():
+                            async for dialog in client.iter_dialogs():
+                                if not dialog.is_user:
+                                    ui.chatSelect.addItem(dialog.title)
+                            #client.disconnect()
+                            await run_client()
+                            break
+
+                        else:
+                            print('Not logged in')
+                            continue
+                        
+                    else:
+                        continue
+                except Exception as e:
+                    print('Failed to load chats. Error = ',e)
+                    ui.stackedWidget.setCurrentIndex(3)
+                    
+        
+        async def check_termination():
+            while AppRunning:
+                await asyncio.sleep(1)
+
+            
+                try:
+                    if not telegram_connected:
+                        continue
+
+                    if not queue_in.empty() and queue_in.get() == 'stop':
+                        print('Stopping app.')
+                        if client:
+                            print('Disconnecting client.')
+                            await client.disconnect()
+                        close_app()
+                    elif not queue_in.empty() and queue_in.get() == 'start':
+                        print('Starting app')
+                        #AppRunning = True
+                    else:
+                        continue
+                except Exception as e:
+                    print('Failed to terminate application. Error = ',e)
+        
+        
+        # @client.on(events.NewMessage())
+        # async def handler(event):
+        #     try:
+        #         if not ui:
+        #             return
+                
+        #         if not ui.AppRunning:
+        #             return
+                
+        #         #log('New message received.')
+        #         sender = await event.get_sender()
+
+        #         #str(type(sender)) != "<class 'telethon.tl.types.User'>"
+                
+        #         chat_entity = await client.get_entity(event.message.peer_id)
+
+        #         if str(type(sender)) == "<class 'telethon.tl.types.User'>":
+        #             name = chat_entity.title if hasattr(chat_entity, 'title') else 'Unknown Group'
+        #         else:
+        #             name = utils.get_display_name(sender)
+        #         #print('Group name is ',group_name)
+        #         #print('Sender type ',str(type(sender)))
+        #         msg = ""
+
+        #         allowed_chats = list()
+
+        #         for i in range(ui.chatList.count()):
+        #             allowed_chats.append(ui.chatList.item(i).text())
+
+                
+        #         if name not in allowed_chats:
+        #             return
+
+        #         if event.is_reply:
+        #             reply = await event.get_reply_message()
+        #             msg = reply.raw_text
+        #             msg = msg.replace("|", "")
+        #             msg = msg.replace("{", "")
+        #             msg = msg.replace("}", "")
+        #             msg = msg + "|" + event.raw_text + " {" + str(reply.id) + "}"
+        #         else:
+        #             msg = event.raw_text
+        #             msg = msg.replace("|", "")
+        #             msg = msg.replace("{", "")
+        #             msg = msg.replace("}", "")
+        #             msg = msg  + " {" + str(event.id) + "}"
+        #         print('Message: ',msg)
+        #         await sendToMT4(f'CH{allowed_chats.index(name) + 1}: {name}' + "\n" + msg)
+        #         MSG = msg.upper()
+        #         ui.signalText.setText(msg[: msg.find("{")] + "\n\nFROM: " + name)
+        #     except Exception as e:
+        #         print("Failed to process last message. Error = ", e)
+
+        
+        # @client.on(events.MessageEdited)
+        # async def handler(event):
+        #     try:
+        #         if not ui:
+        #             return
+                
+        #         if not ui.AppRunning:
+        #             return
+                
+        #         #log('New message received.')
+        #         sender = await event.get_sender()
+
+        #         #str(type(sender)) != "<class 'telethon.tl.types.User'>"
+                
+        #         chat_entity = await client.get_entity(event.message.peer_id)
     
+        #         if str(type(sender)) == "<class 'telethon.tl.types.User'>":
+        #             name = chat_entity.title if hasattr(chat_entity, 'title') else 'Unknown Group'
+        #         else:
+        #             name = utils.get_display_name(sender)
+        #         #print('Group name is ',group_name)
+        #         #print('Sender type ',str(type(sender)))
+        #         msg = ""
+
+        #         allowed_chats = list()
+
+        #         for i in range(ui.chatList.count()):
+        #             allowed_chats.append(ui.chatList.item(i).text())
+
+        #         if name not in allowed_chats:
+        #             return
+
+        #         if event.is_reply:
+        #             reply = await event.get_reply_message()
+        #             msg = reply.raw_text
+        #             msg = msg.replace("|", "")
+        #             msg = msg.replace("{", "")
+        #             msg = msg.replace("}", "")
+        #             msg = msg + "|" + event.raw_text + " {" + str(reply.id) + "}"
+        #         else:
+        #             msg = event.raw_text
+        #             msg = msg.replace("|", "")
+        #             msg = msg.replace("{", "")
+        #             msg = msg.replace("}", "")
+        #             msg = msg  + " {" + str(event.id) + "}"
+        #         await sendToMT4(f'CH{allowed_chats.index(name) + 1}: {name}' + "\n" + msg + '\n\nEdited')
+        #         MSG = msg.upper()
+        #         ui.signalText.setText(msg[: msg.find("{")] + "\n\nFROM: " + name)
+        #     except Exception as e:
+        #         print("Failed to process last message. Error = ", e)
+        
+        async def run_client():
+            global session_validated
+
+            while not telegram_connected:
+                continue
+
+            while not client:
+                await asyncio.sleep(1)
+
+            while not client.is_connected():
+                await asyncio.sleep(1)
+        
+            print('Client exists and is connected.')
+
+            try:
+                await client.start()
+                await client.run_until_disconnected()
+                print("Client disconnected.")
+            except asyncio.CancelledError:
+                print("Bot task was cancelled.")
+                    
+            except Exception as e:
+                print("Failed to run bot. Error = ", e)
+            
+        #loop.create_task(run_client())
+        loop.run_until_complete(asyncio.gather(login_to_telegram(), update_chats(), update_terminals(), check_termination()))
+
+    except Exception as e:
+        print(f'Could not run bot. Reason: {e}')
         
 
 
@@ -894,7 +876,8 @@ def close_app():
     global AppRunning
     print('Closing app')
     #ui.queue_in.put('stop')
-    client.disconnect()
+    if telegram_connected:
+        client.disconnect()
     #ui.logout()
     ui.timer.stop()
     AppRunning = False
