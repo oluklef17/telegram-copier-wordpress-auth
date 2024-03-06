@@ -541,6 +541,129 @@ def run_bot(queue_in, queue_out):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
+        async def register_client():
+            @client.on(events.NewMessage())
+            async def handler(event):
+                try:
+                    if not ui:
+                        return
+                    
+                    if not ui.AppRunning:
+                        return
+                    
+                    #log('New message received.')
+                    sender = await event.get_sender()
+
+                    #str(type(sender)) != "<class 'telethon.tl.types.User'>"
+                    
+                    chat_entity = await client.get_entity(event.message.peer_id)
+
+                    if str(type(sender)) == "<class 'telethon.tl.types.User'>":
+                        name = chat_entity.title if hasattr(chat_entity, 'title') else 'Unknown Group'
+                    else:
+                        name = utils.get_display_name(sender)
+                    #print('Group name is ',group_name)
+                    #print('Sender type ',str(type(sender)))
+                    msg = ""
+
+                    allowed_chats = list()
+
+                    for i in range(ui.chatList.count()):
+                        allowed_chats.append(ui.chatList.item(i).text())
+
+                    
+                    if name not in allowed_chats:
+                        return
+
+                    if event.is_reply:
+                        reply = await event.get_reply_message()
+                        msg = reply.raw_text
+                        msg = msg.replace("|", "")
+                        msg = msg.replace("{", "")
+                        msg = msg.replace("}", "")
+                        msg = msg + "|" + event.raw_text + " {" + str(reply.id) + "}"
+                    else:
+                        msg = event.raw_text
+                        msg = msg.replace("|", "")
+                        msg = msg.replace("{", "")
+                        msg = msg.replace("}", "")
+                        msg = msg  + " {" + str(event.id) + "}"
+                    print('Message: ',msg)
+                    await sendToMT4(f'CH{allowed_chats.index(name) + 1}: {name}' + "\n" + msg)
+                    MSG = msg.upper()
+                    ui.signalText.setText(msg[: msg.find("{")] + "\n\nFROM: " + name)
+                except Exception as e:
+                    print("Failed to process last message. Error = ", e)
+
+            
+            @client.on(events.MessageEdited)
+            async def handler(event):
+                try:
+                    if not ui:
+                        return
+                    
+                    if not ui.AppRunning:
+                        return
+                    
+                    #log('New message received.')
+                    sender = await event.get_sender()
+
+                    #str(type(sender)) != "<class 'telethon.tl.types.User'>"
+                    
+                    chat_entity = await client.get_entity(event.message.peer_id)
+        
+                    if str(type(sender)) == "<class 'telethon.tl.types.User'>":
+                        name = chat_entity.title if hasattr(chat_entity, 'title') else 'Unknown Group'
+                    else:
+                        name = utils.get_display_name(sender)
+                    #print('Group name is ',group_name)
+                    #print('Sender type ',str(type(sender)))
+                    msg = ""
+
+                    allowed_chats = list()
+
+                    for i in range(ui.chatList.count()):
+                        allowed_chats.append(ui.chatList.item(i).text())
+
+                    if name not in allowed_chats:
+                        return
+
+                    if event.is_reply:
+                        reply = await event.get_reply_message()
+                        msg = reply.raw_text
+                        msg = msg.replace("|", "")
+                        msg = msg.replace("{", "")
+                        msg = msg.replace("}", "")
+                        msg = msg + "|" + event.raw_text + " {" + str(reply.id) + "}"
+                    else:
+                        msg = event.raw_text
+                        msg = msg.replace("|", "")
+                        msg = msg.replace("{", "")
+                        msg = msg.replace("}", "")
+                        msg = msg  + " {" + str(event.id) + "}"
+                    await sendToMT4(f'CH{allowed_chats.index(name) + 1}: {name}' + "\n" + msg + '\n\nEdited')
+                    MSG = msg.upper()
+                    ui.signalText.setText(msg[: msg.find("{")] + "\n\nFROM: " + name)
+                except Exception as e:
+                    print("Failed to process last message. Error = ", e)
+        
+        async def run_client():
+            global session_validated
+
+            while not telegram_connected:
+                continue
+        
+            print('Client exists and is connected.')
+
+            try:
+                await client.start()
+                await client.run_until_disconnected()
+            except asyncio.CancelledError:
+                print("Bot task was cancelled.")
+                    
+            except Exception as e:
+                print("Failed to run bot. Error = ", e)
+
                 
         async def login_to_telegram():
             global telegram_connected
@@ -550,17 +673,40 @@ def run_bot(queue_in, queue_out):
             global gui_launched
 
             while AppRunning:
-                if client and phone_code_hash == '':
+                if client and not phone_code_hash:
                     await client.connect()
                     if await client.get_me():
                         telegram_connected = True
+                        print('Client validated')
+                        await register_client()
+                        await run_client()
                 else:
                     #print('Working')
+                    
                     if not gui_launched:
                         continue
                     if not queue_in.empty():
                         message = queue_in.get()
                         print(f'New queue message: {message}')
+
+                        try:
+                            client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
+                            await client.connect()
+                            if await client.is_user_authorized():
+                                print('Successfully logged in to the client.')
+                                ui.stackedWidget.setCurrentIndex(0)
+                                phone_code_hash = None
+                                telegram_connected = True
+                                await register_client()
+                                await run_client()
+                                break
+                            else:
+                                print(f'Client not logged in.')
+                                ui.stackedWidget.setCurrentIndex(3)
+
+                        except Exception as e:
+                            print(f'Could not login client. Reason: {e}')
+                            ui.stackedWidget.setCurrentIndex(3)
 
                         async def process_code_request():
                             global phone, client, phone_code_hash
@@ -595,8 +741,10 @@ def run_bot(queue_in, queue_out):
                             if await client.is_user_authorized():
                                 print('Successfully logged in to the client.')
                                 ui.stackedWidget.setCurrentIndex(0)
-                                phone_code_hash = ''
+                                phone_code_hash = None
                                 telegram_connected = True
+                                await register_client()
+                                await run_client()
                             else:
                                 print('Client not logged in.')
 
@@ -611,11 +759,11 @@ def run_bot(queue_in, queue_out):
                             print(f'Error processing message: {e}')
 
 
-        if os.path.exists(f'{session}.session'):
-            client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
-        else:
-            task = loop.create_task(login_to_telegram())
-            loop.run_until_complete(task)
+        # if os.path.exists(f'{session}.session'):
+        #     client = TelegramClient(session=session, api_id=api_id, api_hash=api_hash)
+        # else:
+        # task = loop.create_task(login_to_telegram())
+        # loop.run_until_complete(task)
 
         async def sendToMT4(data):
             global currentList
@@ -697,7 +845,6 @@ def run_bot(queue_in, queue_out):
                                 if not dialog.is_user:
                                     ui.chatSelect.addItem(dialog.title)
                             #client.disconnect()
-                            await run_client()
                             break
 
                         else:
@@ -735,134 +882,7 @@ def run_bot(queue_in, queue_out):
                     print('Failed to terminate application. Error = ',e)
         
         
-        # @client.on(events.NewMessage())
-        # async def handler(event):
-        #     try:
-        #         if not ui:
-        #             return
-                
-        #         if not ui.AppRunning:
-        #             return
-                
-        #         #log('New message received.')
-        #         sender = await event.get_sender()
-
-        #         #str(type(sender)) != "<class 'telethon.tl.types.User'>"
-                
-        #         chat_entity = await client.get_entity(event.message.peer_id)
-
-        #         if str(type(sender)) == "<class 'telethon.tl.types.User'>":
-        #             name = chat_entity.title if hasattr(chat_entity, 'title') else 'Unknown Group'
-        #         else:
-        #             name = utils.get_display_name(sender)
-        #         #print('Group name is ',group_name)
-        #         #print('Sender type ',str(type(sender)))
-        #         msg = ""
-
-        #         allowed_chats = list()
-
-        #         for i in range(ui.chatList.count()):
-        #             allowed_chats.append(ui.chatList.item(i).text())
-
-                
-        #         if name not in allowed_chats:
-        #             return
-
-        #         if event.is_reply:
-        #             reply = await event.get_reply_message()
-        #             msg = reply.raw_text
-        #             msg = msg.replace("|", "")
-        #             msg = msg.replace("{", "")
-        #             msg = msg.replace("}", "")
-        #             msg = msg + "|" + event.raw_text + " {" + str(reply.id) + "}"
-        #         else:
-        #             msg = event.raw_text
-        #             msg = msg.replace("|", "")
-        #             msg = msg.replace("{", "")
-        #             msg = msg.replace("}", "")
-        #             msg = msg  + " {" + str(event.id) + "}"
-        #         print('Message: ',msg)
-        #         await sendToMT4(f'CH{allowed_chats.index(name) + 1}: {name}' + "\n" + msg)
-        #         MSG = msg.upper()
-        #         ui.signalText.setText(msg[: msg.find("{")] + "\n\nFROM: " + name)
-        #     except Exception as e:
-        #         print("Failed to process last message. Error = ", e)
-
         
-        # @client.on(events.MessageEdited)
-        # async def handler(event):
-        #     try:
-        #         if not ui:
-        #             return
-                
-        #         if not ui.AppRunning:
-        #             return
-                
-        #         #log('New message received.')
-        #         sender = await event.get_sender()
-
-        #         #str(type(sender)) != "<class 'telethon.tl.types.User'>"
-                
-        #         chat_entity = await client.get_entity(event.message.peer_id)
-    
-        #         if str(type(sender)) == "<class 'telethon.tl.types.User'>":
-        #             name = chat_entity.title if hasattr(chat_entity, 'title') else 'Unknown Group'
-        #         else:
-        #             name = utils.get_display_name(sender)
-        #         #print('Group name is ',group_name)
-        #         #print('Sender type ',str(type(sender)))
-        #         msg = ""
-
-        #         allowed_chats = list()
-
-        #         for i in range(ui.chatList.count()):
-        #             allowed_chats.append(ui.chatList.item(i).text())
-
-        #         if name not in allowed_chats:
-        #             return
-
-        #         if event.is_reply:
-        #             reply = await event.get_reply_message()
-        #             msg = reply.raw_text
-        #             msg = msg.replace("|", "")
-        #             msg = msg.replace("{", "")
-        #             msg = msg.replace("}", "")
-        #             msg = msg + "|" + event.raw_text + " {" + str(reply.id) + "}"
-        #         else:
-        #             msg = event.raw_text
-        #             msg = msg.replace("|", "")
-        #             msg = msg.replace("{", "")
-        #             msg = msg.replace("}", "")
-        #             msg = msg  + " {" + str(event.id) + "}"
-        #         await sendToMT4(f'CH{allowed_chats.index(name) + 1}: {name}' + "\n" + msg + '\n\nEdited')
-        #         MSG = msg.upper()
-        #         ui.signalText.setText(msg[: msg.find("{")] + "\n\nFROM: " + name)
-        #     except Exception as e:
-        #         print("Failed to process last message. Error = ", e)
-        
-        async def run_client():
-            global session_validated
-
-            while not telegram_connected:
-                continue
-
-            while not client:
-                await asyncio.sleep(1)
-
-            while not client.is_connected():
-                await asyncio.sleep(1)
-        
-            print('Client exists and is connected.')
-
-            try:
-                await client.start()
-                await client.run_until_disconnected()
-                print("Client disconnected.")
-            except asyncio.CancelledError:
-                print("Bot task was cancelled.")
-                    
-            except Exception as e:
-                print("Failed to run bot. Error = ", e)
             
         #loop.create_task(run_client())
         loop.run_until_complete(asyncio.gather(login_to_telegram(), update_chats(), update_terminals(), check_termination()))
